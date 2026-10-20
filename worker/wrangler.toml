@@ -1,0 +1,31 @@
+name = "rfp-bid-desk-api"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+# Plain settings. These are not secret.
+[vars]
+# The web address of your GitHub Pages site. Add more, comma separated, if needed.
+ALLOWED_ORIGINS = "https://hailu187.github.io"
+MODEL = "claude-sonnet-5-5"
+SESSION_HOURS = "8"
+
+# Secrets are NOT set here. Set them once with:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put DEMO_PASSWORD
+#   npx wrangler secret put SESSION_SECRET
+
+# Login attempts: 5 per minute per IP address.
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
+# Analysis calls: 10 per minute per signed in session.
+[[ratelimits]]
+name = "API_LIMITER"
+namespace_id = "1002"
+simple = { limit = 10, period = 60 }
+
+[observability]
+enabled = true

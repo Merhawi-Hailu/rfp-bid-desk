@@ -1,0 +1,43 @@
+name: Deploy web app to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write backend address into config.js
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [ -n "$API_URL" ]; then
+            printf 'window.BID_DESK_CONFIG = { apiUrl: "%s" };\n' "$API_URL" > web/config.js
+            echo "Using API_URL=$API_URL"
+          else
+            echo "::warning::Repository variable API_URL is not set. The app will show a setup message."
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

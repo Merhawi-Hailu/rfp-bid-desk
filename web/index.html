@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://*.workers.dev; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>RFP Bid Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Login screen -->
+<div class="gate" id="gate">
+  <form class="box" id="loginForm" autocomplete="off">
+    <span class="tag">Demo</span>
+    <h1>RFP Bid Desk</h1>
+    <p class="note">Enter the demo password you were given.</p>
+    <div>
+      <label for="pw">Password</label>
+      <input type="password" id="pw" required autocomplete="current-password">
+    </div>
+    <div class="err" id="loginErr" hidden></div>
+    <button class="btn primary" type="submit" id="loginBtn">Sign in</button>
+  </form>
+</div>
+
+<header class="mast">
+  <div class="wrap">
+    <div class="brand"><h1>RFP Bid Desk</h1><span class="tag" id="modeTag">Demo data</span></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-analyse" aria-selected="true" data-panel="analyse">Analyse tender</button>
+      <button class="tab" role="tab" id="tab-repo" aria-selected="false" data-panel="repo">Document folder <span class="n" id="docCount">0</span></button>
+      <button class="tab" role="tab" id="tab-saved" aria-selected="false" data-panel="saved">Saved <span class="n" id="runCount">0</span></button>
+      <button class="tab" id="logoutBtn" type="button">Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="banner" class="banner" hidden></div>
+
+  <!-- ANALYSE -->
+  <section class="panel" id="panel-analyse">
+    <div class="desk">
+      <aside class="intake">
+        <div class="box pad">
+          <p class="eyebrow">Tender</p>
+          <h2>Load the RFP, RFQ or RFI</h2>
+          <div>
+            <label for="bidTitle">Bid name</label>
+            <input type="text" id="bidTitle" placeholder="e.g. Northvale data analytics platform">
+          </div>
+          <div class="drop" id="rfpDrop">
+            <input type="file" id="rfpFile" accept=".pdf,.docx,.txt,.md,.csv">
+            <strong>Drop the tender document here</strong>
+            <span>PDF, Word (.docx) or text. Or paste it below.</span>
+          </div>
+          <div class="filemeta" id="rfpMeta" hidden></div>
+          <div>
+            <label for="rfpText">Tender text</label>
+            <textarea id="rfpText" placeholder="The tender text appears here. You can also paste it."></textarea>
+          </div>
+          <button class="btn link" id="loadSample" type="button">Load the sample tender</button>
+        </div>
+
+        <div class="box pad">
+          <p class="eyebrow">Search in</p>
+          <ul class="sources" id="sources"></ul>
+          <div class="row">
+            <button class="btn primary grow" id="runBtn" type="button">Analyse tender</button>
+            <button class="btn" id="stopBtn" type="button" hidden>Stop</button>
+          </div>
+          <p class="note">Takes about 1 to 3 minutes.</p>
+        </div>
+      </aside>
+
+      <section class="board" id="board"></section>
+    </div>
+  </section>
+
+  <!-- REPOSITORY -->
+  <section class="panel" id="panel-repo" hidden>
+    <div class="repo">
+      <div class="intake">
+        <div class="box pad">
+          <p class="eyebrow">Folder from this laptop</p>
+          <h2>Open a folder</h2>
+          <p class="note">Pick a folder of CVs, project reports and reference letters. Files are read in this browser. Only the text needed for an analysis is sent to the backend, and nothing is stored there. Names with "CV" or "resume" count as CVs, names with "reference" or "letter" count as reference letters, and everything else counts as past work.</p>
+          <div class="drop" id="folderDrop">
+            <input type="file" id="folderInput" webkitdirectory directory multiple>
+            <strong>Choose a folder</strong>
+            <span>PDF, Word (.docx) and text files are read.</span>
+          </div>
+          <div class="filemeta" id="folderMeta" hidden></div>
+        </div>
+        <form class="box pad" id="addForm">
+          <p class="eyebrow">For this session</p>
+          <h2>Add single documents</h2>
+          <div>
+            <label for="addKind">Type</label>
+            <select id="addKind">
+              <option value="cv">CV</option>
+              <option value="project">Past project or case study</option>
+              <option value="letter">Reference letter</option>
+            </select>
+          </div>
+          <div class="drop" id="addDrop">
+            <input type="file" id="addFiles" accept=".pdf,.docx,.txt,.md,.csv" multiple>
+            <strong>Drop files here</strong>
+            <span>Each file becomes one document.</span>
+          </div>
+          <div class="filemeta" id="addMeta" hidden></div>
+          <div class="row end"><button class="btn primary" type="submit" id="addBtn">Add documents</button></div>
+          <p class="note">Added documents last until you close this tab.</p>
+        </form>
+      </div>
+      <div class="box tree" id="tree"></div>
+    </div>
+  </section>
+
+  <!-- SAVED -->
+  <section class="panel" id="panel-saved" hidden>
+    <div class="box saved" id="savedBox"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="demo-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
