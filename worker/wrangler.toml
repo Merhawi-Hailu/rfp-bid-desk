@@ -6,7 +6,7 @@ workers_dev = true
 # Plain settings. These are not secret.
 [vars]
 # The web address of your GitHub Pages site. Add more, comma separated, if needed.
-ALLOWED_ORIGINS = "https://hailu187.github.io"
+ALLOWED_ORIGINS = "https://merhawi-hailu.github.io"
 MODEL = "claude-sonnet-5-5"
 SESSION_HOURS = "8"
 

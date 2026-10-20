@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import worker, { verifyToken } from "../src/index.js";
 import { parseJson } from "../src/prompts.js";
 
-const ORIGIN = "https://hailu187.github.io";
+const ORIGIN = "https://merhawi-hailu.github.io";
 const env = {
   ALLOWED_ORIGINS: ORIGIN,
   ANTHROPIC_API_KEY: "test-key",

@@ -29,7 +29,7 @@ You need: a GitHub account, a free Cloudflare account, and a Claude API key from
 On your laptop, with Node.js 20 or newer:
 
 ```bash
-git clone https://github.com/Hailu187/rfp-bid-desk.git
+git clone https://github.com/Merhawi-Hailu/rfp-bid-desk.git
 cd rfp-bid-desk/worker
 npm install
 npx wrangler login            # opens the browser to sign in to Cloudflare
@@ -56,13 +56,13 @@ In GitHub: **Settings → Secrets and variables → Actions → Variables → Ne
 
 In GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-Then go to **Actions → Deploy web app to GitHub Pages → Run workflow**. When it finishes, the site is at `https://hailu187.github.io/rfp-bid-desk/`.
+Then go to **Actions → Deploy web app to GitHub Pages → Run workflow**. When it finishes, the site is at `https://merhawi-hailu.github.io/rfp-bid-desk/`.
 
 > GitHub Pages from a **private** repository needs a paid GitHub plan (Pro, Team or Enterprise). On the free plan, either upgrade or make the repository public. Making it public is safe from a secrets point of view, because no secrets are stored in the code, but the code and fictional demo data become visible.
 
 ### 4. Check the allowed web address
 
-`worker/wrangler.toml` sets `ALLOWED_ORIGINS = "https://hailu187.github.io"`. The backend refuses calls from any other website. If you use a custom domain, add it there (comma separated) and redeploy the backend.
+`worker/wrangler.toml` sets `ALLOWED_ORIGINS = "https://merhawi-hailu.github.io"`. The backend refuses calls from any other website. If you use a custom domain, add it there (comma separated) and redeploy the backend.
 
 ### 5. Optional: deploy the backend automatically
 
