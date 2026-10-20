@@ -224,3 +224,4 @@ ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: 0
 .gate input[type="password"] { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
 .gate .err { padding: 8px 10px; }
 .who { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); }
+.gate .tag { align-self: flex-start; }
