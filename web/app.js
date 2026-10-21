@@ -371,7 +371,7 @@ function renderCvCheck() {
       const needs = st.key !== "current";
       const s = sent[d.path];
       return `<tr>
-        <td class="who"><b>${esc(meta.name)}</b><span>${esc(d.path)}</span></td>
+        <td class="person"><b>${esc(meta.name)}</b><span title="${esc(d.path)}">${esc(d.path.split("/").pop())}</span></td>
         <td><input type="email" data-cvemail="${esc(d.path)}" value="${esc(meta.email)}" placeholder="name@company.com" aria-label="Owner email for ${esc(meta.name)}">${meta.emailSource ? `<span class="src">${esc(meta.emailSource)}</span>` : ""}</td>
         <td><input type="date" data-cvdate="${esc(d.path)}" value="${meta.updated ? isoDay(meta.updated) : ""}" max="${isoDay(new Date())}" aria-label="Last updated date for ${esc(meta.name)}">${meta.source ? `<span class="src">${esc(meta.source)}</span>` : `<span class="src">not found, enter it</span>`}</td>
         <td class="age">${esc(ageText(st.months) || "n/a")}</td>

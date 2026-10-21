@@ -243,8 +243,9 @@ ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: 0
 .cvsummary .count.ok b { color: var(--ok); }
 .cvsummary .spacer { flex: 1 1 auto; }
 .cvtable td { vertical-align: middle; }
-.cvtable td.who b { display: block; }
-.cvtable td.who span { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.cvtable td.person { min-width: 170px; }
+.cvtable td.person b { display: block; font-size: 0.92rem; }
+.cvtable td.person span { display: block; font-family: var(--f-mono); font-size: 0.7rem; color: var(--muted); overflow-wrap: anywhere; }
 .cvtable input { font: inherit; font-size: 0.84rem; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 5px 8px; width: 100%; min-width: 180px; }
 .cvtable input[type="date"] { min-width: 140px; }
 .cvtable .src { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
