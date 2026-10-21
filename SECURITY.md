@@ -18,7 +18,7 @@ This is a stakeholder demo. These controls are in place.
 
 - **Origin lock.** The backend only answers requests from the web addresses in `ALLOWED_ORIGINS`.
 - **Rate limits.** 5 login attempts per minute per IP address, and 10 analysis calls per minute per session.
-- **Fixed tasks only.** The browser cannot send its own prompt. It sends data for one of three tasks (`extract`, `cv`, `work`) and the backend builds the prompt. The backend cannot be used as a general chatbot.
+- **Fixed tasks only.** The browser cannot send its own prompt. It sends data for one of four tasks (`extract`, `cv`, `work`, `evidence`) and the backend builds the prompt. The backend cannot be used as a general chatbot.
 - **Size limits.** Requests over 600 KB are refused. Prompts are capped at 120 KB (free AI) or 250 KB (Claude) and outputs at a fixed number of tokens.
 - **Prompt injection guard.** Tender and document text is wrapped and the model is told to treat it as data, not instructions.
 - **Spend limit.** On Cloudflare's free plan, Workers AI stops at the daily free allowance, so it cannot run up a bill. If Claude is turned on later, set a monthly spend limit in the Claude Console.

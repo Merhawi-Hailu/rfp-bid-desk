@@ -5,9 +5,10 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 1. **Extracts the key information**: client, closing date, mandatory items, scoring, the roles asked for, and any previous work the client wants to see.
 2. **Matches CVs to roles**: ranks consultants for each role with a match score, what they meet, and their gaps.
 3. **Finds supporting past work**: scans a folder of project reports and reference letters and shows which ones prove each experience requirement.
-4. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
+4. **Builds the evidence pack**: links the right CV, certificates and proof of similar work to each requirement, checks certificate expiry dates against the closing date, and lists what to fix before submitting.
+5. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
 
-It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters) and a sample tender, so it can be shown without any real company data.
+It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
 
 Live site: https://merhawi-hailu.github.io/rfp-bid-desk/
 

@@ -129,6 +129,37 @@ ${docs.map(d => docBlock(d, per)).join("\n\n")}`;
       }, maxBytes);
     },
   },
+
+  evidence: {
+    maxTokens: 5000,
+    build(input, maxBytes) {
+      const mandatory = arr(input.mandatory, 30).map(m => ({ id: clip(String(m.id || ""), 20), requirement: clip(String(m.requirement || ""), 400), evidence: clip(String(m.evidence || ""), 300) }));
+      const people = arr(input.people, 20).map(p => ({ role: clip(String(p.role || ""), 120), name: clip(String(p.name || ""), 120), certifications: arr(p.certifications, 10).map(c => clip(String(c), 200)) }));
+      const docs = cleanDocs(input.docs, 40);
+      if (!mandatory.length && !people.length) { const e = new Error("nothing_to_match"); e.code = "bad_request"; throw e; }
+      return fit(sc => {
+        const per = Math.max(300, Math.floor((maxBytes * 0.6 * sc) / Math.max(1, docs.length)));
+        return `Link the bidder's certificate and compliance documents to what the tender asks for.
+- For each mandatory requirement, list the documents that prove it. Use "Found" if a document clearly proves it, "Missing" if no document does, and "Not a document" if the requirement is an action (for example attending a briefing) rather than a document.
+- For each person, check each required certification. Only count a certificate document whose holder is that person and whose certification matches. If the tender gives options (for example "PMP or PRINCE2"), one matching certificate is enough, so report that option as "Found" and the other options as "Not needed".
+- Use the exact document paths shown. Never invent a document.
+- Do not judge expiry dates. The app checks those.
+
+Reply with one JSON object:
+{"mandatory": [{"id": string, "requirement": string, "status": "Found" | "Missing" | "Not a document", "files": [string], "note": string (one short sentence, say what is missing or what to do)}],
+ "people": [{"role": string, "name": string, "certs": [{"required": string, "status": "Found" | "Missing" | "Not needed", "file": string or null, "note": string}]}]}
+
+MANDATORY REQUIREMENTS:
+${clip(JSON.stringify(mandatory, null, 1), 20_000)}
+
+PEOPLE AND THE CERTIFICATIONS THEIR ROLE NEEDS:
+${clip(JSON.stringify(people, null, 1), 10_000)}
+
+CERTIFICATE AND COMPLIANCE DOCUMENTS (${docs.length}):
+${docs.length ? docs.map(d => docBlock(d, per)).join("\n\n") : "None in the folder."}`;
+      }, maxBytes);
+    },
+  },
 };
 
 /** Reads JSON out of the model reply, tolerating a code fence or a sentence around it. */

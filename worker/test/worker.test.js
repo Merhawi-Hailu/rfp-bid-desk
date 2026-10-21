@@ -131,6 +131,25 @@ test("refuses unknown tasks and oversized bodies", async () => {
   assert.equal((await worker.fetch(post("/api/analyze", { task: "extract", tender: "a".repeat(700_000) }, auth), env)).status, 413);
 });
 
+test("evidence task: links certificates and compliance documents", async () => {
+  const env = baseEnv({ AI: fakeAi('{"mandatory":[],"people":[]}') });
+  const auth = await login(env);
+  const body = {
+    task: "evidence",
+    mandatory: [{ id: "MAN-01", requirement: "CSD registration", evidence: "CSD summary report" }],
+    people: [{ role: "Lead Data Engineer", name: "Thandi Mokoena", certifications: ["DP-700 or DP-203"] }],
+    docs: [{ path: "Certificates/Thandi - DP-700 certificate.pdf", text: "Holder: Thandi Mokoena. DP-700. Expires: 3 November 2026" }],
+  };
+  const r = await worker.fetch(post("/api/analyze", body, auth), env);
+  assert.equal(r.status, 200);
+  const prompt = env.AI.calls[0].input.messages[1].content;
+  assert.match(prompt, /MAN-01/);
+  assert.match(prompt, /Thandi Mokoena/);
+  assert.match(prompt, /DOCUMENT 001 \| Certificates\/Thandi - DP-700 certificate.pdf/);
+  const empty = await worker.fetch(post("/api/analyze", { task: "evidence", mandatory: [], people: [], docs: [] }, auth), env);
+  assert.equal(empty.status, 400);
+});
+
 test("parses JSON wrapped in text", () => {
   assert.deepEqual(parseJson('Here you go: {"a":1} done'), { a: 1 });
   assert.equal(parseJson("no json here"), null);

@@ -138,6 +138,47 @@ Signed: General Manager, Information Technology.` },
   { kind: "letter", path: `${D}/Reference Letters/National retail group reference letter.pdf`, title: "National retail group reference letter", text: `REFERENCE LETTER (fictional demo data)
 National retail group, 15 January 2022
 Demo Consulting delivered our Customer Analytics Platform in 2021. Signed: Head of Data.` },
+  { kind: "cert", path: `${D}/Certificates/Thandi Mokoena - DP-700 certificate.pdf`, title: "Thandi Mokoena - DP-700 certificate", text: `CERTIFICATE (fictional demo data)
+Holder: Thandi Mokoena
+Certification: Microsoft Certified: Fabric Data Engineer Associate (DP-700)
+Issued: 3 November 2025
+Expires: 3 November 2026
+Credential ID: DEMO-DP700-0001` },
+  { kind: "cert", path: `${D}/Certificates/Johan van Wyk - PL-300 certificate.pdf`, title: "Johan van Wyk - PL-300 certificate", text: `CERTIFICATE (fictional demo data)
+Holder: Johan van Wyk
+Certification: Microsoft Certified: Power BI Data Analyst Associate (PL-300)
+Issued: 26 June 2023
+Expires: 26 June 2026
+Credential ID: DEMO-PL300-0002` },
+  { kind: "cert", path: `${D}/Certificates/Lerato Nkosi - PMP certificate.pdf`, title: "Lerato Nkosi - PMP certificate", text: `CERTIFICATE (fictional demo data)
+Holder: Lerato Nkosi
+Certification: Project Management Professional (PMP), Project Management Institute
+Issued: 12 May 2014, renewed 1 September 2024
+Valid until: 31 August 2027
+Certificate number: DEMO-PMP-0003` },
+  { kind: "cert", path: `${D}/Company Compliance/CSD summary report.pdf`, title: "CSD summary report", text: `CENTRAL SUPPLIER DATABASE SUMMARY REPORT (fictional demo data)
+Supplier: Demo Consulting (Pty) Ltd
+Supplier number: MAAA0000000
+Registration status: Active
+Tax compliance status: Compliant
+Report date: 1 September 2026` },
+  { kind: "cert", path: `${D}/Company Compliance/SARS tax compliance status PIN.pdf`, title: "SARS tax compliance status PIN", text: `TAX COMPLIANCE STATUS (fictional demo data)
+Taxpayer: Demo Consulting (Pty) Ltd
+Status: Compliant
+PIN: DEMO-TCS-0004
+Issued: 1 April 2026
+Valid until: 31 March 2027` },
+  { kind: "cert", path: `${D}/Company Compliance/B-BBEE Level 2 certificate.pdf`, title: "B-BBEE Level 2 certificate", text: `B-BBEE VERIFICATION CERTIFICATE (fictional demo data)
+Entity: Demo Consulting (Pty) Ltd
+B-BBEE status: Level 2 contributor
+Issued: 15 August 2026
+Valid until: 14 August 2027` },
+  { kind: "cert", path: `${D}/Company Compliance/SBD 1 and SBD 4 signed forms.pdf`, title: "SBD 1 and SBD 4 signed forms", text: `STANDARD BIDDING DOCUMENTS (fictional demo data)
+Forms: SBD 1 (Invitation to bid) and SBD 4 (Bidder's disclosure)
+Bidder: Demo Consulting (Pty) Ltd
+Completed and signed by: Director
+Date signed: 10 October 2026
+Note: SBD 6.1 (Preference points claim form) is not included in this file.` }
 ];
 
 const SAMPLE_RFP = `SAMPLE TENDER (fictional, for demonstration only)

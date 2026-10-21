@@ -7,7 +7,8 @@ const NA = "Information Not Provided";
 const API = String((window.BID_DESK_CONFIG || {}).apiUrl || "").replace(/\/+$/, "");
 const { DEMO, SAMPLE_RFP } = window.BID_DESK_DEMO;
 const LIB = { PDF: "vendor/pdf.min.js", PDFW: "vendor/pdf.worker.min.js", MAMMOTH: "vendor/mammoth.browser.min.js" };
-const KIND = { cv: "CVs", project: "Past Projects", letter: "Reference Letters" };
+const KIND = { cv: "CVs", project: "Past Projects", letter: "Reference Letters", cert: "Certificates" };
+const KIND_ONE = { cv: "CV", project: "Project", letter: "Letter", cert: "Certificate" };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
@@ -69,6 +70,7 @@ const isNA = v => !v || /information not provided/i.test(String(v));
 function classify(path) {
   const p = path.toLowerCase();
   if (/(^|[^a-z])(cv|cvs|resume|résumé|curriculum)([^a-z]|$)/.test(p)) return "cv";
+  if (/certificate|certification|(^|[^a-z])cert([^a-z]|$)|(^|[^a-z])(csd|sbd|sars|b-?bbee|bee)([^a-z]|$)|tax (clearance|compliance)|compliance|clearance|accreditation|registration/.test(p)) return "cert";
   if (/reference|letter|testimonial/.test(p)) return "letter";
   return "project";
 }
@@ -169,8 +171,8 @@ $("#loadSample").addEventListener("click", () => {
 });
 
 /* ---------------- sources panel ---------------- */
-function counts(docs) { const c = { cv: 0, project: 0, letter: 0 }; docs.forEach(d => c[d.kind]++); return c; }
-function cstr(c) { return `${c.cv} CVs · ${c.project} projects · ${c.letter} letters`; }
+function counts(docs) { const c = { cv: 0, project: 0, letter: 0, cert: 0 }; docs.forEach(d => { if (d.kind in c) c[d.kind]++; }); return c; }
+function cstr(c) { return `${c.cv} CVs · ${c.project} projects · ${c.letter} letters · ${c.cert} certificates`; }
 function renderSources() {
   $("#sources").innerHTML = `
     <li><label class="toggle"><input type="checkbox" id="srcDemo" ${S.demoOn ? "checked" : ""}><div><b>Demo repository (fictional)</b><span>${cstr(counts(DEMO))}</span></div></label></li>
@@ -195,7 +197,7 @@ $("#folderInput").addEventListener("change", async e => {
     const f = files[i], path = f.webkitRelativePath || f.name;
     m.textContent = `Reading ${i + 1} of ${files.length}: ${path}`;
     if (f.size > 25e6) { bad.push(path); continue; }
-    try { const { text } = await extractText(f); out.push({ id: "loc" + i, src: "local", kind: classify(path), path, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null }); }
+    try { const { text } = await extractText(f); out.push({ id: "loc" + i, src: "local", kind: classify(path), path, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null, file: f }); }
     catch { bad.push(path); }
   }
   S.local = out; S.localName = root;
@@ -212,7 +214,7 @@ $("#addForm").addEventListener("submit", async e => {
   for (const f of files) {
     try {
       const { text } = await extractText(f);
-      S.added.push({ id: "add" + Math.random().toString(36).slice(2), src: "added", kind, path: `Added documents/${KIND[kind]}/${f.name}`, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null });
+      S.added.push({ id: "add" + Math.random().toString(36).slice(2), src: "added", kind, path: `Added documents/${KIND[kind]}/${f.name}`, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null, file: f });
       added++;
     } catch (err) { probs.push(err.message || `Could not add ${f.name}.`); }
   }
@@ -228,7 +230,7 @@ function renderTree() {
   if (!docs.length) { box.innerHTML = `<header><h2>Document folder</h2></header><p class="emptybig">No documents. Turn on the demo repository on the Analyse tab, open a folder, or add documents.</p>`; return; }
   const groups = {};
   docs.forEach(d => { const dir = d.path.split("/").slice(0, -1).join("/") || "(top level)"; (groups[dir] ||= []).push(d); });
-  const label = k => (k === "cv" ? "CV" : k === "letter" ? "Letter" : "Project");
+  const label = k => KIND_ONE[k] || "Project";
   box.innerHTML = `<header><h2>Document folder</h2><span class="note">${cstr(counts(docs))}</span></header>` +
     Object.keys(groups).sort().map(dir => `<section class="folder"><h3>${esc(dir)}<span class="c">${groups[dir].length}</span></h3>${
       groups[dir].map(d => `<div class="file"><div class="nm">${esc(d.path.split("/").pop())}<span>${label(d.kind)} · ${fmtN(d.text.length)} chars</span></div>
@@ -384,7 +386,7 @@ function renderCvCheck() {
     }).join("")}
   </tbody></table></div>`;
 }
-$("#cvPolicy").addEventListener("change", e => { store.set("bdCvPolicy", Number(e.target.value)); renderCvCheck(); if (S.current) paint("cv"); });
+$("#cvPolicy").addEventListener("change", e => { store.set("bdCvPolicy", Number(e.target.value)); renderCvCheck(); if (S.current) paintAll(); });
 $("#senderName").addEventListener("change", e => { store.set("bdSender", e.target.value.trim()); renderCvCheck(); });
 $("#cvTable").addEventListener("change", e => {
   const em = e.target.closest("[data-cvemail]"), dt = e.target.closest("[data-cvdate]");
@@ -393,7 +395,7 @@ $("#cvTable").addEventListener("change", e => {
   if (em) { const v = em.value.trim(); if (v && !SAFE_EMAIL.test(v)) { toast("That email address does not look right."); return; } cur.email = v; }
   if (dt) cur.date = dt.value;
   all[path] = cur; store.set("bdCvMeta", all);
-  renderCvCheck(); if (S.current) paint("cv");
+  renderCvCheck(); if (S.current) paintAll();
 });
 $("#cvTable").addEventListener("click", e => {
   const r = e.target.closest("[data-remind]");
@@ -444,15 +446,17 @@ const STEPS = [
   { id: "info", title: "Key information from the tender" },
   { id: "cv", title: "Skills match from CVs" },
   { id: "work", title: "Past work that supports the bid" },
+  { id: "evidence", title: "Evidence pack for the submission" },
 ];
 const STATUS = { waiting: "Waiting", working: "Working", done: "Done", error: "Failed", stopped: "Stopped", skipped: "Skipped" };
 function renderOutline() {
-  $("#board").innerHTML = `<div class="box outline"><p class="eyebrow">How it works</p><h2>From tender to evidence in three steps</h2>
+  $("#board").innerHTML = `<div class="box outline"><p class="eyebrow">How it works</p><h2>From tender to evidence pack in four steps</h2>
   <p class="note" style="margin-top:6px">Load a tender, choose where to search, then press Analyse. Anything the documents do not show is marked "${NA}" instead of being guessed.</p>
   <ol class="flow">
     <li><b>Extract key information</b><span>Client, deadline, mandatory items, scoring, the roles and the previous work the client asks for.</span></li>
     <li><b>Match skills from CVs</b><span>Ranks consultants for each role with a match score, what they meet, and their gaps.</span></li>
     <li><b>Find supporting past work</b><span>Scans the folder for projects and reference letters that prove each experience requirement.</span></li>
+    <li><b>Build the evidence pack</b><span>Links the right CV, certificates and proof of similar work to each requirement, and flags anything missing or expired.</span></li>
   </ol></div>`;
 }
 function renderBoard() {
@@ -471,9 +475,9 @@ function paint(id) {
   el.querySelector("[data-st]").className = "status st-" + st.status;
   el.querySelector("[data-st]").innerHTML = `<span class="s"></span>${esc(STATUS[st.status])}`;
   let html = "";
-  if (st.data) html = (id === "info" ? viewInfo : id === "cv" ? viewCv : viewWork)(st.data, st);
+  if (st.data) html = ({ info: viewInfo, cv: viewCv, work: viewWork, evidence: viewEvidence })[id](st.data, st);
   else if (st.status === "working") html = `<p class="waiting">${esc(st.progress || "Working...")}</p>`;
-  else if (st.status === "waiting") html = `<p class="waiting">Starts when step 1 is done.</p>`;
+  else if (st.status === "waiting") html = `<p class="waiting">${id === "evidence" ? "Starts when steps 2 and 3 are done." : "Starts when step 1 is done."}</p>`;
   else if (st.status === "skipped") html = `<p class="waiting">${esc(st.note || "Skipped.")}</p>`;
   if (["error", "stopped"].includes(st.status) && !S.running)
     html += `<div class="err"><span>${esc(st.status === "stopped" ? "You stopped this step." : st.error || errCopy())}</span><button class="btn small" data-rerun="${id}" type="button">Run this step again</button></div>`;
@@ -587,14 +591,190 @@ async function stepWork() {
     st.scanNote = `Scanned <b>${sl.total}</b> project documents and <b>${letters.length}</b> reference letters. Shortlisted the <b>${picked.length}</b> closest by keyword for a detailed check.${top ? `<br>Top keyword hits:<br>${top}` : ""}${extra}`;
   } catch (e) { fail(st, e); } finally { paint("work"); }
 }
+/* ---------------- step 4: evidence pack ---------------- */
+const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const baseName = p => String(p || "").split("/").pop();
+const lowerFirst = t => String(t || "").charAt(0).toLowerCase() + String(t || "").slice(1);
+function findDoc(path) {
+  if (!path) return null;
+  const docs = allDocs(), b = baseName(path).toLowerCase();
+  return docs.find(d => d.path === path) || docs.find(d => baseName(d.path).toLowerCase() === b) || null;
+}
+/** Reads an expiry or "valid until" date from a certificate's text. */
+function certExpiry(text) {
+  const re = /(?:expires|expiry(?:\s+date)?|valid\s+until|valid\s+to|expiration(?:\s+date)?)\s*(?:on)?\s*[:\-]?\s*([^\n|;]{4,30})/gi;
+  let m; while ((m = re.exec(String(text || "")))) { const d = parseDateText(m[1]); if (d) return d; }
+  return null;
+}
+function expiryInfo(doc, deadline) {
+  const exp = doc && certExpiry(doc.text);
+  if (!exp) return { cls: "na", label: "No expiry date", key: "none" };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (exp < today) return { cls: "bad", label: `Expired ${fmtDay(exp)}`, key: "expired" };
+  if (deadline && exp < deadline) return { cls: "bad", label: `Expires ${fmtDay(exp)}, before the closing date`, key: "beforeDeadline" };
+  if (exp - today < 60 * DAY) return { cls: "warn", label: `Expires ${fmtDay(exp)}`, key: "soon" };
+  return { cls: "ok", label: `Valid until ${fmtDay(exp)}`, key: "valid" };
+}
+function fileChip(path) {
+  const d = findDoc(path), name = baseName(path);
+  return d ? `<button class="filechip" type="button" data-view="${esc(d.path)}" title="${esc(d.path)}">${esc(name)}</button>`
+           : `<span class="filechip off" title="Not in the loaded folder: ${esc(path)}">${esc(name)}</span>`;
+}
+
+/** Puts steps 1 to 4 together into one checklist. Used by the screen and the download. */
+function buildPack(c) {
+  const info = c.steps.info.data || {}, ev = c.steps.evidence.data || {};
+  const deadline = info.submissionDeadlineISO && /^\d{4}-\d{2}-\d{2}/.test(info.submissionDeadlineISO) ? new Date(info.submissionDeadlineISO + "T23:59:59") : null;
+  const evPeople = arr(ev.people);
+  const personnel = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
+    const cd = arr(r.candidates)[0];
+    if (!cd) return { role: r.role, name: null, cv: null, certs: [] };
+    const cvDoc = docForCandidate(cd), meta = cvDoc && cvMeta(cvDoc), st = meta && cvStatus(meta);
+    const p = evPeople.find(x => norm(x.role) === norm(r.role)) || evPeople.find(x => norm(x.name) === norm(cd.name));
+    const certs = arr(p && p.certs).map(ct => {
+      const doc = ct.file ? findDoc(ct.file) : null;
+      return { required: ct.required, status: ct.status, file: ct.file, note: ct.note, expiry: ct.status === "Found" && doc ? expiryInfo(doc, deadline) : null };
+    });
+    return { role: r.role, name: cd.name, match: cd.match, cv: cvDoc ? { path: cvDoc.path, st } : { path: cd.file, st: null }, certs };
+  });
+  const experience = arr(c.steps.work.data && c.steps.work.data.requirements).map(r => ({
+    id: r.id, requirement: r.requirement, verdict: r.verdict, action: r.action,
+    items: arr(r.matches).map(m => ({ file: m.file, project: m.project || baseName(m.file), relevance: m.relevance, letter: m.referenceLetter, letterFile: m.letterFile })),
+  }));
+  const mandatory = arr(ev.mandatory).map(m => ({
+    id: m.id, requirement: m.requirement, status: m.status, note: m.note,
+    files: arr(m.files).map(f => ({ path: f, expiry: expiryInfo(findDoc(f), deadline) })),
+  }));
+  const linked = new Set(), issues = [];
+  personnel.forEach(p => {
+    if (!p.name) { issues.push(`${p.role}: no suitable CV`); return; }
+    if (p.cv && p.cv.path) linked.add(p.cv.path);
+    if (p.cv && p.cv.st && p.cv.st.key === "overdue") issues.push(`${p.name}: CV out of date`);
+    p.certs.forEach(ct => {
+      if (ct.status === "Missing") issues.push(`${p.name}: ${ct.required} certificate missing`);
+      if (ct.file && ct.status === "Found") linked.add(ct.file);
+      if (ct.expiry && ["expired", "beforeDeadline", "soon"].includes(ct.expiry.key)) issues.push(`${p.name}: ${ct.required} ${lowerFirst(ct.expiry.label)}`);
+    });
+  });
+  experience.forEach(e => {
+    e.items.forEach(i => { linked.add(i.file); if (i.letterFile) linked.add(i.letterFile); if (i.letter === "Not found") issues.push(`${i.project}: reference letter missing`); });
+    if (e.verdict && e.verdict !== "Met") issues.push(`${e.id || "Experience"}: ${e.verdict.toLowerCase()}`);
+  });
+  mandatory.forEach(m => {
+    m.files.forEach(f => linked.add(f.path));
+    if (m.status === "Missing") issues.push(`${m.id}: ${m.requirement} (missing)`);
+    m.files.forEach(f => { if (["expired", "beforeDeadline"].includes(f.expiry.key)) issues.push(`${m.id}: ${baseName(f.path)} ${lowerFirst(f.expiry.label)}`); });
+  });
+  return { personnel, experience, mandatory, linked: [...linked].filter(Boolean), issues, deadline };
+}
+
+async function stepEvidence() {
+  const c = S.current, st = c.steps.evidence, info = c.steps.info.data;
+  if (!info) { st.status = "skipped"; st.note = "Skipped because step 1 did not finish."; paint("evidence"); return; }
+  const people = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
+    const cd = arr(r.candidates)[0]; if (!cd) return null;
+    const req = arr(info.roles).find(x => norm(x.role) === norm(r.role)) || arr(info.roles).find(x => norm(r.role).includes(norm(x.role)) || norm(x.role).includes(norm(r.role)));
+    return { role: r.role, name: cd.name, certifications: arr(req && req.certifications) };
+  }).filter(Boolean);
+  const mandatory = arr(info.mandatory).map(m => ({ id: m.id, requirement: m.requirement, evidence: m.evidence }));
+  const certDocs = (c.docs || allDocs()).filter(d => d.kind === "cert");
+  const needAi = mandatory.length || people.some(p => p.certifications.length);
+  st.status = "working"; st.data = null;
+  st.progress = `Matching ${certDocs.length} certificates and compliance documents to ${mandatory.length} mandatory items and ${people.length} people...`;
+  paint("evidence");
+  try {
+    let d;
+    if (!needAi) d = { mandatory: [], people: [] };
+    else if (!certDocs.length) d = {
+      mandatory: mandatory.map(m => ({ id: m.id, requirement: m.requirement, status: /attend|briefing|site visit|meeting|presentation/i.test(m.requirement) ? "Not a document" : "Missing", files: [], note: "No certificate or compliance documents in the folder." })),
+      people: people.map(p => ({ role: p.role, name: p.name, certs: p.certifications.map(x => ({ required: x, status: "Missing", file: null, note: "No certificates in the folder." })) })),
+    };
+    else {
+      d = await ask("evidence", { mandatory, people, docs: forSend(certDocs, 60000) });
+      if (!d || typeof d !== "object") throw { code: "invalid_json" };
+    }
+    st.data = { mandatory: arr(d.mandatory), people: arr(d.people) }; st.status = "done";
+  } catch (e) { fail(st, e); } finally { paint("evidence"); }
+}
+
+function viewEvidence(x, st) {
+  const c = S.current, pack = buildPack(c);
+  const okIcon = v => pill(v === "Not a document" ? "Action" : v);
+  const persons = pack.personnel.map(p => `
+    <section class="evcard"><div class="evhead"><b>${esc(p.role)}</b>${p.name ? `<span>${esc(p.name)}${p.match != null ? ` · ${esc(p.match)}% match` : ""}</span>` : `<span class="pill bad">No suitable CV</span>`}</div>
+    ${p.name ? `<div class="evrow"><span class="evlabel">CV</span><div class="evfiles">${p.cv && p.cv.path ? fileChip(p.cv.path) : `<span class="pill bad">CV file not found</span>`}${p.cv && p.cv.st ? `<span class="pill ${p.cv.st.cls}">${esc(p.cv.st.key === "unknown" ? "No update date" : `${p.cv.st.label}, ${ageText(p.cv.st.months)} old`)}</span>` : ""}</div></div>` : ""}
+    ${p.certs.map(ct => `<div class="evrow"><span class="evlabel">${esc(ct.required)}</span><div class="evfiles">${ct.status === "Found" && ct.file ? fileChip(ct.file) : ""}${ct.status === "Found" ? (ct.expiry ? `<span class="pill ${ct.expiry.cls}">${esc(ct.expiry.label)}</span>` : "") : okIcon(ct.status)}${ct.note && ct.status !== "Found" ? `<span class="evnote">${esc(ct.note)}</span>` : ""}</div></div>`).join("")}
+    ${p.name && !p.certs.length ? `<div class="evrow"><span class="evlabel">Certificates</span><div class="evfiles"><span class="evnote">The tender names no certification for this role.</span></div></div>` : ""}
+    </section>`).join("");
+  const exp = pack.experience.map(e => `
+    <section class="evcard"><div class="evhead"><b>${esc(e.id || "")} ${esc(e.requirement)}</b>${pill(e.verdict)}</div>
+    ${e.items.length ? e.items.map(i => `<div class="evrow"><span class="evlabel">${esc(i.project)}</span><div class="evfiles">${fileChip(i.file)}${i.letterFile ? fileChip(i.letterFile) : ""}${i.letter === "Not found" ? `<span class="pill bad">Reference letter missing</span>` : i.letter === "Found" ? `<span class="pill ok">Letter found</span>` : ""}</div></div>`).join("") : `<div class="evrow"><span class="evnote">No supporting documents found.</span></div>`}
+    ${e.action ? `<div class="evrow"><span class="evnote"><b>Next step:</b> ${esc(e.action)}</span></div>` : ""}</section>`).join("");
+  const mand = pack.mandatory.length ? `<div class="tbl"><table><thead><tr><th>ID</th><th>Requirement</th><th>Status</th><th>Linked documents</th></tr></thead><tbody>
+    ${pack.mandatory.map(m => `<tr><td class="id">${esc(m.id)}</td><td>${esc(m.requirement)}${m.note && m.status !== "Found" ? `<span class="evnote">${esc(m.note)}</span>` : ""}</td><td>${okIcon(m.status)}</td><td><div class="evfiles">${m.files.map(f => `${fileChip(f.path)}${f.expiry.key !== "none" && f.expiry.key !== "valid" ? `<span class="pill ${f.expiry.cls}">${esc(f.expiry.label)}</span>` : ""}`).join("") || "<span class='evnote'>None</span>"}</div></td></tr>`).join("")}
+  </tbody></table></div>` : `<p class="waiting">No mandatory requirements were found in the tender.</p>`;
+  return `
+    <div class="cvsummary" style="padding:0;border:0">
+      <span class="count ok"><b>${pack.linked.length}</b> files linked</span>
+      <span class="count ${pack.issues.length ? "bad" : "ok"}"><b>${pack.issues.length}</b> items to fix</span>
+      ${pack.deadline ? `<span class="count"><b>${esc(fmtDay(pack.deadline))}</b> closing date</span>` : ""}
+    </div>
+    ${pack.issues.length ? `<div class="sec"><h4>Fix before you submit</h4><ul class="plain fixlist">${pack.issues.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>` : ""}
+    <div class="sec"><h4>Key personnel: CVs and certificates</h4>${persons ? `<div class="evgrid">${persons}</div>` : `<p class="waiting">${esc(c.steps.cv.note || "No skills match to build from.")}</p>`}</div>
+    <div class="sec"><h4>Company experience: proof of similar work</h4>${exp ? `<div class="evgrid">${exp}</div>` : `<p class="waiting">${esc(c.steps.work.note || "No past work results to build from.")}</p>`}</div>
+    <div class="sec"><h4>Mandatory documents</h4>${mand}</div>
+    <p class="note">Click a file to open it. Expiry dates are checked against today and the tender's closing date.</p>`;
+}
+
+function evidenceMarkdown(c) {
+  const p = buildPack(c), L = [];
+  L.push("", `Files linked: ${p.linked.length}. Items to fix: ${p.issues.length}.`);
+  if (p.issues.length) { L.push("", "### Fix before you submit", ""); p.issues.forEach(i => L.push(`- ${i}`)); }
+  L.push("", "### Key personnel", "", "| Role | Consultant | Document | Status |", "|---|---|---|---|");
+  p.personnel.forEach(x => {
+    if (!x.name) { L.push(`| ${x.role} | None found | | Missing |`); return; }
+    L.push(`| ${x.role} | ${x.name} | CV: ${x.cv && x.cv.path ? x.cv.path : "not found"} | ${x.cv && x.cv.st ? x.cv.st.label : "Unknown"} |`);
+    x.certs.forEach(ct => L.push(`| ${x.role} | ${x.name} | ${ct.required}: ${ct.file || "none"} | ${ct.status === "Found" && ct.expiry ? ct.expiry.label : ct.status} |`));
+  });
+  L.push("", "### Company experience", "", "| Requirement | Project report | Reference letter |", "|---|---|---|");
+  p.experience.forEach(e => e.items.forEach(i => L.push(`| ${e.id || ""} (${e.verdict}) | ${i.file} | ${i.letterFile || i.letter || ""} |`)));
+  L.push("", "### Mandatory documents", "", "| ID | Requirement | Status | Documents |", "|---|---|---|---|");
+  p.mandatory.forEach(m => L.push(`| ${m.id} | ${m.requirement} | ${m.status} | ${m.files.map(f => `${f.path} (${f.expiry.label})`).join("; ") || "None"} |`));
+  return L;
+}
+
+/* ---------------- document viewer ---------------- */
+let dlgUrl = null;
+function openDoc(path) {
+  const d = findDoc(path); if (!d) { toast("That file is not in the loaded folder."); return; }
+  $("#dlgKind").textContent = KIND_ONE[d.kind] || "Document";
+  $("#dlgTitle").textContent = baseName(d.path);
+  $("#dlgPath").textContent = d.path;
+  $("#dlgText").textContent = clip(d.text, 20000) + (d.text.length > 20000 ? "\n..." : "");
+  if (dlgUrl) { URL.revokeObjectURL(dlgUrl); dlgUrl = null; }
+  const acts = $("#dlgActions"); acts.innerHTML = "";
+  if (d.file) {
+    dlgUrl = URL.createObjectURL(d.file);
+    const a = document.createElement("a"); a.className = "btn small primary"; a.href = dlgUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original file";
+    acts.appendChild(a);
+  } else {
+    const n = document.createElement("span"); n.className = "note"; n.textContent = d.src === "demo" ? "Demo document: only the text is available." : "Only the text is available for this document.";
+    acts.appendChild(n);
+  }
+  $("#docDialog").showModal();
+}
+$("#dlgClose").addEventListener("click", () => $("#docDialog").close());
+$("#docDialog").addEventListener("close", () => { if (dlgUrl) { setTimeout(() => { URL.revokeObjectURL(dlgUrl); dlgUrl = null; }, 60000); } });
+document.addEventListener("click", e => { const v = e.target.closest("[data-view]"); if (v) openDoc(v.dataset.view); });
+
 function sourcesLabel() { const p = []; if (S.demoOn) p.push("demo repository"); if (S.local.length) p.push(S.localName); if (S.added.length) p.push("added documents"); return p.join(", ") || "no documents"; }
 $("#runBtn").addEventListener("click", async () => {
   if (S.running) return;
   S.current = { id: "r" + Date.now(), title: $("#bidTitle").value.trim() || "Untitled bid", rfpName: S.rfpName, createdAt: Date.now(), sourcesLabel: sourcesLabel(), docs: allDocs(),
-    steps: { info: { status: "waiting" }, cv: { status: "waiting" }, work: { status: "waiting" } } };
+    steps: { info: { status: "waiting" }, cv: { status: "waiting" }, work: { status: "waiting" }, evidence: { status: "waiting" } } };
   S.ctls = []; setRunning(true); renderBoard(); $("#board").scrollIntoView({ block: "start" });
-  if (await stepInfo()) await Promise.allSettled([stepCv(), stepWork()]);
-  else ["cv", "work"].forEach(k => { S.current.steps[k].status = "skipped"; S.current.steps[k].note = "Skipped because step 1 did not finish."; });
+  if (await stepInfo()) { await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); }
+  else ["cv", "work", "evidence"].forEach(k => { S.current.steps[k].status = "skipped"; S.current.steps[k].note = "Skipped because step 1 did not finish."; });
   setRunning(false); paintAll(); saveRun();
 });
 async function rerun(id) {
@@ -602,8 +782,11 @@ async function rerun(id) {
   if (!S.token) { showGate(""); return; }
   if (!c.docs) c.docs = allDocs();
   S.ctls = []; setRunning(true); paintAll();
-  if (id === "info" || !c.steps.info.data) { if (await stepInfo()) await Promise.allSettled([stepCv(), stepWork()]); }
-  else if (id === "cv") await stepCv(); else await stepWork();
+  if (!c.steps.evidence) c.steps.evidence = { status: "waiting" };
+  if (id === "info" || !c.steps.info.data) { if (await stepInfo()) { await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); } }
+  else if (id === "cv") { await stepCv(); await stepEvidence(); }
+  else if (id === "work") { await stepWork(); await stepEvidence(); }
+  else await stepEvidence();
   setRunning(false); paintAll(); saveRun();
 }
 $("#stopBtn").addEventListener("click", () => S.ctls.forEach(c => c.abort()));
@@ -635,7 +818,7 @@ $("#savedBox").addEventListener("click", e => {
   if (o) {
     if (S.running) { toast("Wait for the current analysis to finish."); return; }
     const r = S.runs.find(x => x.id === o.dataset.open); if (!r) return;
-    S.current = { ...r, docs: null, steps: Object.fromEntries(STEPS.map(s => [s.id, { ...(r.steps[s.id] || { status: "error" }) }])) };
+    S.current = { ...r, docs: null, steps: Object.fromEntries(STEPS.map(s => [s.id, { ...(r.steps[s.id] || { status: "skipped", note: "This analysis was saved before this step existed. Run it again to add it." }) }])) };
     renderBoard(); showTab("analyse"); return;
   }
   const d = e.target.closest("[data-rdel]");
@@ -680,6 +863,9 @@ function toMarkdown() {
     arr(r.matches).forEach(m => L.push(`| ${m.file} | ${str(m.client)} | ${str(m.year)} | ${str(m.value)} | ${m.relevance} | ${m.referenceLetter || ""} |`));
     if (r.action) L.push("", `Next step: ${r.action}`);
   }); else L.push("", c.steps.work.note || NA);
+  L.push("", "## 4. Evidence pack for the submission");
+  if (c.steps.evidence && c.steps.evidence.data) L.push(...evidenceMarkdown(c));
+  else L.push("", (c.steps.evidence && c.steps.evidence.note) || NA);
   return L.join("\n");
 }
 function mdToHtml(md) {
