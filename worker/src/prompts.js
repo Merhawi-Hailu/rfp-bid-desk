@@ -130,6 +130,45 @@ ${docs.map(d => docBlock(d, per)).join("\n\n")}`;
     },
   },
 
+  certcheck: {
+    maxTokens: 6000,
+    build(input, maxBytes) {
+      const people = arr(input.people, 6).map(p => ({
+        name: clip(String(p.name || ""), 120),
+        cvPath: clip(String(p.cvPath || ""), 300),
+        cvText: clip(String(p.cvText || ""), 8000),
+        files: arr(p.files, 25).filter(f => f && typeof f.text === "string").map(f => ({ path: clip(String(f.path || ""), 300), text: f.text })),
+      })).filter(p => p.name && p.cvText.trim());
+      if (!people.length) { const e = new Error("no_people"); e.code = "bad_request"; throw e; }
+      return fit(sc => {
+        const nFiles = Math.max(1, people.reduce((n, p) => n + p.files.length, 0));
+        const perFile = Math.max(300, Math.floor((maxBytes * 0.45 * sc) / nFiles));
+        const perCv = Math.max(800, Math.floor((maxBytes * 0.35 * sc) / people.length));
+        const blocks = people.map((p, i) => `=== PERSON ${i + 1}: ${p.name} ===
+CV FILE: ${p.cvPath}
+--- CV TEXT ---
+${clip(p.cvText, perCv)}
+--- FILES IN THIS PERSON'S FOLDER (${p.files.length}) ---
+${p.files.length ? p.files.map(f => `--- FILE | ${f.path} ---\n${clip(f.text, perFile)}`).join("\n\n") : "None."}`).join("\n\n");
+        return `For each person, compare the certifications listed in their CV with the files in their folder.
+- List every professional certification the CV says the person holds. Do not list degrees, diplomas or skills.
+- For each certification, decide:
+  "Proof found": a file is an exam or credential certificate for that exact certification and level, for this person.
+  "Proof does not match": a file looks related but is not valid proof, for example a course attendance certificate instead of the exam certificate, a different level (Foundation instead of Practitioner), or a different person's name.
+  "No proof": no file relates to it.
+- A name can be shortened on a certificate (for example initials). Accept it when it clearly fits this person, and say so in the note.
+- Under "extra", list certificate files for this person that the CV does not mention.
+- Ignore files that are not certificates. Use the exact file paths shown. Do not judge expiry dates.
+- Keep each note to one short sentence.
+
+Reply with one JSON object:
+{"people": [{"cvPath": string, "name": string, "claims": [{"certification": string, "status": "Proof found" | "Proof does not match" | "No proof", "file": string or null, "note": string}], "extra": [{"certification": string, "file": string, "note": string}]}]}
+
+${blocks}`;
+      }, maxBytes);
+    },
+  },
+
   evidence: {
     maxTokens: 5000,
     build(input, maxBytes) {

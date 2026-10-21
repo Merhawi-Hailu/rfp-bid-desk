@@ -150,6 +150,20 @@ test("evidence task: links certificates and compliance documents", async () => {
   assert.equal(empty.status, 400);
 });
 
+test("certcheck task: reads each person's CV and folder files", async () => {
+  const env = baseEnv({ AI: fakeAi('{"people":[]}') });
+  const auth = await login(env);
+  const body = { task: "certcheck", people: [{ name: "Sipho Dlamini", cvPath: "Consultants/Sipho Dlamini/CV.pdf", cvText: "Certifications: PRINCE2 Foundation (2020).",
+    files: [{ path: "Consultants/Sipho Dlamini/PRINCE2 course attendance.pdf", text: "Certificate of attendance. Not an exam certificate." }] }] };
+  const r = await worker.fetch(post("/api/analyze", body, auth), env);
+  assert.equal(r.status, 200);
+  const prompt = env.AI.calls[0].input.messages[1].content;
+  assert.match(prompt, /PERSON 1: Sipho Dlamini/);
+  assert.match(prompt, /FILE \| Consultants\/Sipho Dlamini\/PRINCE2 course attendance.pdf/);
+  assert.match(prompt, /Proof does not match/);
+  assert.equal((await worker.fetch(post("/api/analyze", { task: "certcheck", people: [] }, auth), env)).status, 400);
+});
+
 test("parses JSON wrapped in text", () => {
   assert.deepEqual(parseJson('Here you go: {"a":1} done'), { a: 1 });
   assert.equal(parseJson("no json here"), null);

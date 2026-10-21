@@ -163,11 +163,15 @@
         <div class="t">
           <p class="eyebrow">Certificate proof</p>
           <h2>Do the CVs match the certificates on file?</h2>
-          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate in the folder, matched by the holder's name and the certification. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand.</p>
+          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate. When each person has their own folder (for example "Merhawi Hailu" holding their CV and certificates), every file in that folder is treated as theirs. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand.</p>
         </div>
-        <div class="cvsettings">
+        <div class="cvsettings certactions">
+          <button class="btn primary" type="button" id="certAiBtn">Check with AI</button>
           <label class="toggle"><input type="checkbox" id="certProblems"><div><b>Only show problems</b></div></label>
         </div>
+      </div>
+      <div class="aistatus">
+        <span id="certAiStatus">The page shows a quick check by name and certification code. Press <b>Check with AI</b> to have the AI read each CV and every file in the person's folder. Results are kept until the files change.</span>
       </div>
       <div class="cvsummary" id="certSummary"></div>
       <div class="certlist" id="certList"></div>

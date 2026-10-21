@@ -115,11 +115,30 @@ cd worker && npm test
 - Status rules: **Overdue** at or past the limit, **Due soon** in the last 2 months before it, **Current** otherwise.
 - Settings, typed dates and emails, and the reminder log are kept in your browser.
 
+## Folder layout
+
+The app works best with **one folder per person**, holding their CV and their certificates:
+
+```
+Consultants/
+  Merhawi Hailu/
+    Merhawi Hailu CV.pdf
+    DP-700 certificate.pdf
+    certs/AZ-900.pdf
+  Thandi Mokoena/
+    ...
+Past Projects/
+Reference Letters/
+Company Compliance/
+```
+
+A folder that holds exactly one CV is treated as that person's folder. Every other file in it, including subfolders, counts as their certificate, whatever the file is called. The folder name is used as the person's name. Shared folders (for example one "CVs" folder for everyone) also work: certificates are then matched by the holder's name in the file.
+
 ## Cert check
 
-- Certifications are read from the CV's "Certifications" section (or "Certificates", "Accreditations", "Licences"), split into one item per certification. Microsoft exam codes (for example DP-700) are picked up anywhere in the CV.
-- A certificate file counts as proof when its holder is the same person (from a "Holder:" or "Name:" line, or the file name) and it names the same certification. For PRINCE2 and similar, the level (Foundation or Practitioner) must match too.
-- If a file is named in an unusual way, use **Link a file** in that row. Links are kept in your browser.
+- **Quick check** (instant, no AI): reads the CV's "Certifications" section, finds the matching certificate file by person and certification code (for PRINCE2 and similar, the level must match), and checks expiry dates. Course attendance certificates are flagged for checking.
+- **Check with AI**: the AI reads each person's CV and every file in their folder. It confirms each listed certification has a real certificate, and catches attendance certificates, wrong levels and name mismatches. It also lists certificates on file that the CV does not mention. Results are kept in your browser until the files change.
+- **Link a file** connects a certificate by hand when the match is missed. **Request missing certificates** drafts an email to the person.
 
 ## Limits of this demo
 

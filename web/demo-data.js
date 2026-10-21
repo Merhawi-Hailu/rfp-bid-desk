@@ -2,7 +2,7 @@
 (() => {
 const D = "Demo repository";
 const DEMO = [
-  { kind: "cv", path: `${D}/CVs/Thandi Mokoena CV.docx`, title: "Thandi Mokoena CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Thandi Mokoena/Thandi Mokoena CV.docx`, title: "Thandi Mokoena CV", text: `CURRICULUM VITAE (fictional demo data)
 Thandi Mokoena, Lead Data Engineer, Demo Consulting
 Email: thandi.mokoena@demo-consulting.example | CV last updated: 12 August 2026
 Qualifications: BSc Honours Computer Science, University of Pretoria (2015).
@@ -13,7 +13,7 @@ Key projects:
 - Riverside Metro Water Smart Meter Data Platform (2022): data engineer. Pipelines for 1.2 million meter readings per day.
 - Mopane City Council Electricity Revenue Dashboards on Microsoft Fabric (2024 to 2025): lead engineer. Fabric lakehouse and data quality checks.
 Skills: Python, PySpark, SQL, Azure Data Factory, Microsoft Fabric, Delta Lake, data quality frameworks, POPIA compliance.` },
-  { kind: "cv", path: `${D}/CVs/Johan van Wyk CV.pdf`, title: "Johan van Wyk CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Johan van Wyk/Johan van Wyk CV.pdf`, title: "Johan van Wyk CV", text: `CURRICULUM VITAE (fictional demo data)
 Johan van Wyk, BI Developer, Demo Consulting
 Email: johan.vanwyk@demo-consulting.example | CV last updated: 14 June 2025
 Qualifications: National Diploma in Information Technology, Tshwane University of Technology (2017).
@@ -24,7 +24,7 @@ Key projects:
 - Mopane City Council Electricity Revenue Dashboards (2024 to 2025): built 16 Power BI dashboards on revenue and electricity losses.
 - Provincial Department of Health Power BI Skills Programme (2024): trainer, trained 60 users.
 Skills: Power BI, DAX, Power Query, row level security, report design, end user training.` },
-  { kind: "cv", path: `${D}/CVs/Lerato Nkosi CV.docx`, title: "Lerato Nkosi CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Lerato Nkosi/Lerato Nkosi CV.docx`, title: "Lerato Nkosi CV", text: `CURRICULUM VITAE (fictional demo data)
 Lerato Nkosi, Senior Project Manager, Demo Consulting
 Email: lerato.nkosi@demo-consulting.example | CV last updated: 20 January 2026
 Qualifications: BCom Information Systems, University of the Witwatersrand (2009). MBA (2016).
@@ -35,7 +35,7 @@ Key projects:
 - Provincial Department of Health Power BI Skills Programme (2024): programme manager, 120 staff trained.
 - Kwena Local Municipality Billing Data Quality and POPIA Governance (2025): project manager.
 Skills: stakeholder management, MFMA procurement rules, project governance, risk management, change management.` },
-  { kind: "cv", path: `${D}/CVs/Sipho Dlamini CV.pdf`, title: "Sipho Dlamini CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Sipho Dlamini/Sipho Dlamini CV.pdf`, title: "Sipho Dlamini CV", text: `CURRICULUM VITAE (fictional demo data)
 Sipho Dlamini, Project Manager, Demo Consulting
 Email: sipho.dlamini@demo-consulting.example | CV last updated: 3 November 2024
 Qualifications: BTech Project Management, University of Johannesburg (2016).
@@ -45,7 +45,7 @@ Key projects:
 - National retail group customer analytics on AWS (2021): project manager, R4.1 million.
 - Insurance claims fraud detection model (2023): project manager.
 Skills: agile delivery, Jira, vendor management, budgeting.` },
-  { kind: "cv", path: `${D}/CVs/Priya Naidoo CV.docx`, title: "Priya Naidoo CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Priya Naidoo/Priya Naidoo CV.docx`, title: "Priya Naidoo CV", text: `CURRICULUM VITAE (fictional demo data)
 Priya Naidoo, Data Scientist, Demo Consulting
 Email: priya.naidoo@demo-consulting.example | CV last updated: 15 December 2025
 Qualifications: MSc Statistics, University of KwaZulu-Natal (2018).
@@ -55,7 +55,7 @@ Key projects:
 - Insurance claims fraud detection model (2023): lead data scientist.
 - Mining predictive maintenance models (2019): data scientist.
 Skills: Python, machine learning, forecasting, some Power BI use (no certification).` },
-  { kind: "cv", path: `${D}/CVs/Michael Botha CV.pdf`, title: "Michael Botha CV", text: `CURRICULUM VITAE (fictional demo data)
+  { kind: "cv", path: `${D}/Consultants/Michael Botha/Michael Botha CV.pdf`, title: "Michael Botha CV", text: `CURRICULUM VITAE (fictional demo data)
 Michael Botha, Data Engineer, Demo Consulting
 Email: michael.botha@demo-consulting.example
 Qualifications: BEng Computer Engineering, Stellenbosch University (2016).
@@ -138,30 +138,35 @@ Signed: General Manager, Information Technology.` },
   { kind: "letter", path: `${D}/Reference Letters/National retail group reference letter.pdf`, title: "National retail group reference letter", text: `REFERENCE LETTER (fictional demo data)
 National retail group, 15 January 2022
 Demo Consulting delivered our Customer Analytics Platform in 2021. Signed: Head of Data.` },
-  { kind: "cert", path: `${D}/Certificates/Thandi Mokoena - DP-700 certificate.pdf`, title: "Thandi Mokoena - DP-700 certificate", text: `CERTIFICATE (fictional demo data)
+  { kind: "cert", path: `${D}/Consultants/Thandi Mokoena/DP-700 certificate.pdf`, title: "DP-700 certificate", text: `CERTIFICATE (fictional demo data)
 Holder: Thandi Mokoena
 Certification: Microsoft Certified: Fabric Data Engineer Associate (DP-700)
 Issued: 3 November 2025
 Expires: 3 November 2026
 Credential ID: DEMO-DP700-0001` },
-  { kind: "cert", path: `${D}/Certificates/Johan van Wyk - PL-300 certificate.pdf`, title: "Johan van Wyk - PL-300 certificate", text: `CERTIFICATE (fictional demo data)
+  { kind: "cert", path: `${D}/Consultants/Johan van Wyk/PL-300 certificate.pdf`, title: "PL-300 certificate", text: `CERTIFICATE (fictional demo data)
 Holder: Johan van Wyk
 Certification: Microsoft Certified: Power BI Data Analyst Associate (PL-300)
 Issued: 26 June 2023
 Expires: 26 June 2026
 Credential ID: DEMO-PL300-0002` },
-  { kind: "cert", path: `${D}/Certificates/Johan van Wyk - DP-600 certificate.pdf`, title: "Johan van Wyk - DP-600 certificate", text: `CERTIFICATE (fictional demo data)
+  { kind: "cert", path: `${D}/Consultants/Johan van Wyk/Certificates/DP-600.pdf`, title: "DP-600", text: `CERTIFICATE (fictional demo data)
 Holder: Johan van Wyk
 Certification: Microsoft Certified: Fabric Analytics Engineer Associate (DP-600)
 Issued: 2 March 2026
 Expires: 2 March 2027
 Credential ID: DEMO-DP600-0005` },
-  { kind: "cert", path: `${D}/Certificates/Lerato Nkosi - PMP certificate.pdf`, title: "Lerato Nkosi - PMP certificate", text: `CERTIFICATE (fictional demo data)
-Holder: Lerato Nkosi
-Certification: Project Management Professional (PMP), Project Management Institute
+  { kind: "cert", path: `${D}/Consultants/Lerato Nkosi/PMP.pdf`, title: "PMP", text: `CERTIFICATE (fictional demo data)
+This certifies that L. Nkosi has met the requirements of the Project Management Institute for the credential
+Certification: Project Management Professional (PMP)
 Issued: 12 May 2014, renewed 1 September 2024
 Valid until: 31 August 2027
 Certificate number: DEMO-PMP-0003` },
+  { kind: "cert", path: `${D}/Consultants/Sipho Dlamini/PRINCE2 course attendance.pdf`, title: "PRINCE2 course attendance", text: `CERTIFICATE OF ATTENDANCE (fictional demo data)
+This confirms that Sipho Dlamini attended a 3 day PRINCE2 Foundation preparation course
+Training provider: Demo Training Academy
+Dates: 10 to 12 March 2020
+Note: this certificate confirms course attendance only. It is not a PRINCE2 exam certificate.` },
   { kind: "cert", path: `${D}/Company Compliance/CSD summary report.pdf`, title: "CSD summary report", text: `CENTRAL SUPPLIER DATABASE SUMMARY REPORT (fictional demo data)
 Supplier: Demo Consulting (Pty) Ltd
 Supplier number: MAAA0000000

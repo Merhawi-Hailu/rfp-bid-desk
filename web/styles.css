@@ -290,3 +290,7 @@ a.btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 .certcard table td { vertical-align: middle; }
 .certcard .evnote { margin-top: 2px; }
 .certcard .kindsel { max-width: 260px; }
+.certactions { align-items: center; }
+.aistatus { padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 0.84rem; color: var(--muted); background: var(--sunk); }
+.ainote { color: var(--ink); font-style: italic; }
+.certcard .evhead b .evnote { font-weight: 400; font-size: 0.74rem; }

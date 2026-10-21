@@ -20,7 +20,22 @@ const sess = {
 
 /* ---------------- state ---------------- */
 const S = { token: null, demoOn: true, local: [], localName: "", added: [], runs: store.get("bdRuns", []), rfpName: "", current: null, ctls: [], running: false };
-const allDocs = () => [...(S.demoOn ? DEMO.map((d, i) => ({ ...d, id: "demo" + i, src: "demo" })) : []), ...S.local, ...S.added];
+const allDocs = () => assignOwners([...(S.demoOn ? DEMO.map((d, i) => ({ ...d, id: "demo" + i, src: "demo" })) : []), ...S.local, ...S.added]);
+const GENERIC_DIR = /^(cvs?|resumes?|consultants?|people|staff|team|employees|documents?|certificates?|certs?|demo repository|added documents)$/i;
+const dirOf = p => String(p || "").split("/").slice(0, -1).join("/");
+/** A folder holding exactly one CV is that person's folder: every file under it belongs to them. */
+function assignOwners(docs) {
+  const byDir = {};
+  docs.forEach(d => { if (d.kind === "cv") (byDir[dirOf(d.path)] ||= []).push(d); });
+  const folders = Object.keys(byDir).filter(dir => byDir[dir].length === 1 && dir && !GENERIC_DIR.test(dir.split("/").pop()));
+  if (!folders.length) return docs;
+  return docs.map(d => {
+    const f = folders.filter(x => d.path.startsWith(x + "/")).sort((a, b) => b.length - a.length)[0];
+    if (!f) return d;
+    const kind = d.kind === "project" && !d.kindManual ? "cert" : d.kind;
+    return { ...d, owner: f.split("/").pop(), ownerDir: f, kind };
+  });
+}
 
 /* ---------------- helpers ---------------- */
 let toastT;
@@ -245,7 +260,7 @@ $("#tree").addEventListener("click", e => {
 });
 $("#tree").addEventListener("change", e => {
   const s = e.target.closest("[data-kind]"); if (!s) return;
-  const d = [...S.local, ...S.added].find(x => x.id === s.dataset.kind); if (d) { d.kind = s.value; renderSources(); }
+  const d = [...S.local, ...S.added].find(x => x.id === s.dataset.kind); if (d) { d.kind = s.value; d.kindManual = true; renderTree(); renderSources(); }
 });
 
 /* ---------------- CV freshness check ---------------- */
@@ -288,7 +303,8 @@ const cvPolicy = () => Number(store.get("bdCvPolicy", 12)) || 12;
 
 function cvMeta(doc) {
   const o = cvOverrides()[doc.path] || {};
-  const name = doc.title.replace(/[\s_-]*(curriculum vitae|cv|resume|résumé)$/i, "").replace(/[_-]+/g, " ").trim() || doc.title;
+  const fromTitle = doc.title.replace(/[\s_-]*(curriculum vitae|cv|resume|résumé)$/i, "").replace(/^(curriculum vitae|cv|resume|résumé)[\s_-]*/i, "").replace(/[_-]+/g, " ").trim();
+  const name = doc.owner || fromTitle || doc.title;
   const emailText = (doc.text.match(EMAIL_RE) || [])[0] || "";
   let updated = null, source = "";
   if (o.date) { updated = parseDateText(o.date); source = "entered by you"; }
@@ -463,7 +479,8 @@ function certHolder(doc) {
   const m = String(doc.text || "").match(/(?:holder|awarded to|issued to|name|this is to certify that)\s*[:\-]?\s*([A-Za-z][A-Za-z .'-]{2,60})/i);
   return m ? m[1].trim().replace(/\s+(has|is|was)\b.*$/i, "") : "";
 }
-function belongsTo(doc, name) {
+function belongsTo(doc, name, cv) {
+  if (doc.ownerDir) return Boolean(cv && cv.ownerDir === doc.ownerDir) || norm(doc.owner) === norm(name);
   const n = norm(name); if (!n) return false;
   const h = norm(certHolder(doc));
   if (h) return h === n || h.includes(n) || n.includes(h);
@@ -482,48 +499,99 @@ function claimMatches(claim, doc) {
 }
 const certLinks = () => store.get("bdCertLinks", {});
 
+const certAiStore = () => store.get("bdCertAi", {});
+const ATTENDANCE = /certificate of (attendance|participation|completion)|attended (a|an|the)\b|course attendance|not an? [a-z0-9 ]{0,20}exam certificate/i;
+/** The files the AI should read for a person: everything in their folder, or certificates that name them. */
+function personFiles(cv, meta, docs) {
+  const certs = docs.filter(d => d.path !== cv.path && d.kind !== "cv");
+  return cv.ownerDir ? certs.filter(d => d.ownerDir === cv.ownerDir) : certs.filter(d => d.kind === "cert" && belongsTo(d, meta.name, cv));
+}
+const certSig = (cv, files) => [cv.path + ":" + cv.text.length, ...files.map(f => f.path + ":" + f.text.length)].join("|");
+function proofStatus(doc) {
+  const exp = expiryInfo(doc, null);
+  return exp.key === "expired" ? { key: "expired", cls: "bad", label: exp.label }
+    : exp.key === "soon" ? { key: "soon", cls: "warn", label: exp.label }
+    : exp.key === "valid" ? { key: "ok", cls: "ok", label: exp.label }
+    : { key: "ok", cls: "ok", label: "Proof found (no expiry date)" };
+}
+
 /** Compares each CV's listed certifications with the certificate files in the folder. */
 function certReport() {
-  const docs = allDocs(), certs = docs.filter(d => d.kind === "cert"), links = certLinks();
+  const docs = allDocs(), links = certLinks(), aiAll = certAiStore();
   const people = docs.filter(d => d.kind === "cv").map(cv => {
-    const meta = cvMeta(cv), mine = certs.filter(d => belongsTo(d, meta.name)), used = new Set();
-    const claims = certClaims(cv.text).map(cl => {
-      const lk = links[cv.path + "::" + cl.key];
-      let doc = lk ? findDoc(lk) : null, how = doc ? "linked by you" : "";
-      if (!doc) { doc = mine.find(d => claimMatches(cl, d)) || null; if (doc) how = "matched by name and certification"; }
-      if (doc) used.add(doc.path);
-      const exp = doc ? expiryInfo(doc, null) : null;
-      const status = !doc ? { key: "missing", cls: "bad", label: "No proof in folder" }
-        : exp.key === "expired" ? { key: "expired", cls: "bad", label: exp.label }
-        : exp.key === "soon" ? { key: "soon", cls: "warn", label: exp.label }
-        : exp.key === "valid" ? { key: "ok", cls: "ok", label: exp.label }
-        : { key: "ok", cls: "ok", label: "Proof found (no expiry date)" };
-      return { ...cl, doc, how, status };
-    });
-    const extra = mine.filter(d => !used.has(d.path)).map(d => ({ doc: d, exp: expiryInfo(d, null) }));
-    return { cv, meta, claims, extra };
+    const meta = cvMeta(cv), files = personFiles(cv, meta, docs), mine = files.filter(d => d.kind === "cert"), used = new Set();
+    const saved = aiAll[cv.path], ai = saved && saved.sig === certSig(cv, files) ? saved : null;
+    let claims, extra;
+    if (ai) {
+      claims = arr(ai.result.claims).map(c => {
+        const info = claimInfo(String(c.certification || "")), lk = links[cv.path + "::" + info.key];
+        let doc = lk ? findDoc(lk) : c.file ? findDoc(c.file) : null, how = lk && doc ? "linked by you" : "checked by AI";
+        let status;
+        if (lk && doc) status = proofStatus(doc);
+        else if (c.status === "Proof found" && doc) status = proofStatus(doc);
+        else if (c.status === "Proof does not match") status = { key: "mismatch", cls: "bad", label: "Proof does not match" };
+        else { status = { key: "missing", cls: "bad", label: "No proof in folder" }; if (c.status !== "Proof does not match") doc = null; }
+        if (doc) used.add(doc.path);
+        return { ...info, text: String(c.certification || info.text), doc, how, note: c.note || "", status };
+      });
+      extra = arr(ai.result.extra).map(x => ({ doc: findDoc(x.file), title: x.certification, note: x.note })).filter(x => x.doc && !used.has(x.doc.path));
+    } else {
+      claims = certClaims(cv.text).map(cl => {
+        const lk = links[cv.path + "::" + cl.key];
+        let doc = lk ? findDoc(lk) : null, how = doc ? "linked by you" : "";
+        if (!doc) { doc = mine.find(d => claimMatches(cl, d)) || null; if (doc) how = "quick match by name and code"; }
+        if (doc) used.add(doc.path);
+        let status = doc ? proofStatus(doc) : { key: "missing", cls: "bad", label: "No proof in folder" };
+        if (doc && how !== "linked by you" && ATTENDANCE.test(doc.text)) status = { key: "mismatch", cls: "warn", label: "Check: looks like course attendance, not an exam certificate" };
+        return { ...cl, doc, how, note: "", status };
+      });
+      extra = mine.filter(d => !used.has(d.path)).map(d => ({ doc: d, title: certTitle(d), note: "" }));
+    }
+    return { cv, meta, files, claims, extra, ai: ai ? { at: ai.at } : null };
   });
-  const all = people.flatMap(p => p.claims);
+  const all = people.flatMap(p => p.claims), k = key => all.filter(c => c.status.key === key).length;
   return {
     people,
-    totals: {
-      claims: all.length,
-      ok: all.filter(c => c.status.key === "ok").length,
-      missing: all.filter(c => c.status.key === "missing").length,
-      expired: all.filter(c => c.status.key === "expired").length,
-      soon: all.filter(c => c.status.key === "soon").length,
-      extra: people.reduce((n, p) => n + p.extra.length, 0),
-    },
+    totals: { claims: all.length, ok: k("ok"), missing: k("missing"), mismatch: k("mismatch"), expired: k("expired"), soon: k("soon"), extra: people.reduce((n, p) => n + p.extra.length, 0), checked: people.filter(p => p.ai).length },
   };
+}
+
+/** Asks the AI to read each person's CV and the files in their folder. */
+let certAiRunning = false;
+async function runCertAi() {
+  if (certAiRunning) return;
+  if (!S.token) { showGate("Sign in to run the AI check."); return; }
+  const docs = allDocs();
+  const people = docs.filter(d => d.kind === "cv").map(cv => { const meta = cvMeta(cv); return { cv, meta, files: personFiles(cv, meta, docs) }; });
+  if (!people.length) { toast("No CVs to check."); return; }
+  certAiRunning = true; const btn = $("#certAiBtn"), stat = $("#certAiStatus"); btn.disabled = true;
+  const all = certAiStore(); let done = 0, failed = "";
+  const batches = []; for (let i = 0; i < people.length; i += 4) batches.push(people.slice(i, i + 4));
+  for (const batch of batches) {
+    stat.textContent = `Reading CVs and certificates: ${done} of ${people.length} people done...`;
+    try {
+      const res = await ask("certcheck", { people: batch.map(p => ({ name: p.meta.name, cvPath: p.cv.path, cvText: clip(p.cv.text, 6000), files: forSend(p.files, 24000) })) });
+      batch.forEach(p => {
+        const r = arr(res && res.people).find(x => x.cvPath === p.cv.path) || arr(res && res.people).find(x => norm(x.name) === norm(p.meta.name));
+        if (r) all[p.cv.path] = { sig: certSig(p.cv, p.files), at: Date.now(), result: { claims: arr(r.claims), extra: arr(r.extra) } };
+      });
+      done += batch.length;
+      store.set("bdCertAi", all); renderCertCheck();
+    } catch (e) { failed = errCopy(e && e.code); break; }
+  }
+  certAiRunning = false; btn.disabled = false;
+  stat.textContent = failed ? `Stopped after ${done} of ${people.length} people. ${failed}` : `AI check finished for ${done} people, ${fmtDate(Date.now())}.`;
+  renderCertCheck();
 }
 
 function certRequestText(p) {
   const first = p.meta.name.split(/\s+/)[0] || "there";
   const due = fmtDay(new Date(Date.now() + 14 * DAY));
   const sender = String(store.get("bdSender", "") || "").trim();
-  const missing = p.claims.filter(c => c.status.key === "missing").map(c => `- ${c.text} (no copy on file)`);
+  const missing = [...p.claims.filter(c => c.status.key === "missing").map(c => `- ${c.text} (no copy on file)`),
+    ...p.claims.filter(c => c.status.key === "mismatch").map(c => `- ${c.text} (the file we have is not valid proof${c.note ? ": " + c.note.replace(/\.$/, "") : ""})`)];
   const expired = p.claims.filter(c => c.status.key === "expired" || c.status.key === "soon").map(c => `- ${c.text} (${lowerFirst(c.status.label)}, please send the renewed certificate)`);
-  const extra = p.extra.map(x => `- ${certTitle(x.doc)}`);
+  const extra = p.extra.map(x => `- ${x.title || certTitle(x.doc)}`);
   const subject = "Please send copies of your certificates for tender submissions";
   let body = `Hi ${first},
 
@@ -551,7 +619,7 @@ function certTitle(doc) {
 }
 function renderCertCheck() {
   const r = certReport(), t = r.totals, onlyProblems = Boolean(store.get("bdCertProblems", false));
-  const badge = $("#certDue"), bad = t.missing + t.expired;
+  const badge = $("#certDue"), bad = t.missing + t.mismatch + t.expired;
   badge.textContent = bad; badge.classList.toggle("zero", !bad);
   $("#certProblems").checked = onlyProblems;
   if (!r.people.length) {
@@ -563,6 +631,7 @@ function renderCertCheck() {
     <span class="count"><b>${t.claims}</b> listed in CVs</span>
     <span class="count ok"><b>${t.ok}</b> proof found</span>
     <span class="count bad"><b>${t.missing}</b> no proof in folder</span>
+    <span class="count bad"><b>${t.mismatch}</b> proof does not match</span>
     <span class="count bad"><b>${t.expired}</b> expired</span>
     <span class="count warn"><b>${t.soon}</b> expiring soon</span>
     <span class="count warn"><b>${t.extra}</b> on file, not in CV</span>`;
@@ -574,16 +643,16 @@ function renderCertCheck() {
     const okMail = SAFE_EMAIL.test(p.meta.email), tx = certRequestText(p);
     const rows = p.claims.filter(c => !onlyProblems || c.status.key !== "ok").map(c => `<tr>
         <td>${esc(c.text)}${c.code ? `<span class="evnote">${esc(c.code)}${c.year ? ` · ${esc(c.year)}` : ""}</span>` : ""}</td>
-        <td>${c.doc ? `${fileChip(c.doc.path)}<span class="evnote">${esc(c.how)}</span>` : `<select class="kindsel" data-certlink="${esc(p.cv.path + "::" + c.key)}" aria-label="Link a certificate file for ${esc(c.text)}"><option value="">Link a file...</option>${allCerts.map(d => `<option value="${esc(d.path)}">${esc(baseName(d.path))}</option>`).join("")}</select>`}</td>
+        <td>${c.doc ? `${fileChip(c.doc.path)}<span class="evnote">${esc(c.how)}</span>${c.note ? `<span class="evnote ainote">${esc(c.note)}</span>` : ""}` : `${c.note ? `<span class="evnote ainote">${esc(c.note)}</span>` : ""}<select class="kindsel" data-certlink="${esc(p.cv.path + "::" + c.key)}" aria-label="Link a certificate file for ${esc(c.text)}"><option value="">Link a file...</option>${allCerts.map(d => `<option value="${esc(d.path)}">${esc(baseName(d.path))}</option>`).join("")}</select>`}</td>
         <td><span class="pill ${c.status.cls}">${esc(c.status.label)}</span>${c.how === "linked by you" ? ` <button class="btn link" type="button" data-certunlink="${esc(p.cv.path + "::" + c.key)}">Unlink</button>` : ""}</td>
       </tr>`).join("");
     const extras = p.extra.map(x => `<tr>
-        <td>${esc(certTitle(x.doc))}<span class="evnote">On file, not listed in the CV</span></td>
+        <td>${esc(x.title || certTitle(x.doc))}<span class="evnote">On file, not listed in the CV</span>${x.note ? `<span class="evnote ainote">${esc(x.note)}</span>` : ""}</td>
         <td>${fileChip(x.doc.path)}</td>
         <td><span class="pill warn">Add to CV</span></td>
       </tr>`).join("");
     return `<section class="evcard certcard">
-      <div class="evhead"><b>${esc(p.meta.name)}</b><span>${fileChip(p.cv.path)} ${probs ? `<span class="pill bad">${probs} to fix</span>` : `<span class="pill ok">All proof on file</span>`}</span></div>
+      <div class="evhead"><b>${esc(p.meta.name)}${p.cv.ownerDir ? `<span class="evnote">Folder: ${esc(p.cv.ownerDir.split("/").pop())} · ${p.files.length} other file${p.files.length === 1 ? "" : "s"}</span>` : ""}</b><span>${p.ai ? `<span class="pill ok">Checked by AI</span>` : `<span class="pill na">Quick check</span>`} ${fileChip(p.cv.path)} ${probs ? `<span class="pill bad">${probs} to fix</span>` : `<span class="pill ok">All proof on file</span>`}</span></div>
       ${p.claims.length || p.extra.length ? `<div class="tbl" style="border:0;border-radius:0"><table><thead><tr><th>Certification in CV</th><th>Proof in folder</th><th>Status</th></tr></thead><tbody>${rows}${extras}</tbody></table></div>`
         : `<div class="evrow"><span class="evnote">No certifications are listed in this CV.</span></div>`}
       ${probs ? `<div class="evrow" style="grid-template-columns:1fr"><div class="acts row">
@@ -594,6 +663,7 @@ function renderCertCheck() {
     </section>`;
   }).join("");
 }
+$("#certAiBtn").addEventListener("click", runCertAi);
 $("#certProblems").addEventListener("change", e => { store.set("bdCertProblems", e.target.checked); renderCertCheck(); });
 $("#certList").addEventListener("change", e => {
   const s = e.target.closest("[data-certlink]"); if (!s || !s.value) return;
