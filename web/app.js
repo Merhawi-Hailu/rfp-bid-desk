@@ -76,11 +76,12 @@ function errCopy(code) {
   return ({
     unauthorized: "Your sign in has ended. Sign in again, then run this step.",
     rate_limited: "Too many requests in a short time. Wait a minute, then try again.",
-    busy: "Claude is busy right now. Wait a minute, then try again.",
+    busy: "The AI service is busy right now. Wait a minute, then try again.",
+    daily_limit: "Today's free AI allowance is used up. It resets at 02:00 South African time. Try again after that.",
     too_large: "The documents are too long for one request. Shorten the tender or use fewer documents.",
     bad_request: "Something in the request was missing. Check the tender and documents, then try again.",
     invalid_json: "The answer came back in the wrong shape. Run this step again.",
-    server_not_configured: "The backend is not set up yet. Ask the app owner to add the Claude API key.",
+    server_not_configured: "The backend is not set up yet. Ask the app owner to finish the Cloudflare setup.",
     network: "Could not reach the backend. Check your connection and try again.",
   })[code] || "Something went wrong in this step. Run it again.";
 }

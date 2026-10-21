@@ -4,7 +4,8 @@ This is a stakeholder demo. These controls are in place.
 
 ## Secrets
 
-- The Claude API key, the demo password and the token signing key are stored as **Cloudflare Worker secrets**. They are never in the code, the repository or the browser.
+- The demo password and the token signing key are stored as **Cloudflare Worker secrets**. They are never in the code, the repository or the browser.
+- The default AI (Cloudflare Workers AI) is reached through a Cloudflare binding, so **no AI API key exists** that could leak. If Claude is turned on later, its API key is also stored only as a Cloudflare secret.
 - `.gitignore` blocks local secret files (`.env`, `.dev.vars`).
 
 ## Access
@@ -18,9 +19,9 @@ This is a stakeholder demo. These controls are in place.
 - **Origin lock.** The backend only answers requests from the web addresses in `ALLOWED_ORIGINS`.
 - **Rate limits.** 5 login attempts per minute per IP address, and 10 analysis calls per minute per session.
 - **Fixed tasks only.** The browser cannot send its own prompt. It sends data for one of three tasks (`extract`, `cv`, `work`) and the backend builds the prompt. The backend cannot be used as a general chatbot.
-- **Size limits.** Requests over 600 KB are refused. Prompts are capped at 250 KB and outputs at a fixed number of tokens.
+- **Size limits.** Requests over 600 KB are refused. Prompts are capped at 120 KB (free AI) or 250 KB (Claude) and outputs at a fixed number of tokens.
 - **Prompt injection guard.** Tender and document text is wrapped and the model is told to treat it as data, not instructions.
-- **Spend limit.** Set a monthly spend limit for the API key in the Claude Console as a final safety net.
+- **Spend limit.** On Cloudflare's free plan, Workers AI stops at the daily free allowance, so it cannot run up a bill. If Claude is turned on later, set a monthly spend limit in the Claude Console.
 
 ## Web app
 
@@ -31,12 +32,13 @@ This is a stakeholder demo. These controls are in place.
 
 ## Data
 
-- The backend does not store tender or CV content and does not log it. Only error status codes are logged.
+- The backend does not store tender or CV content and does not log it. Only short error reasons are logged.
+- Text sent for analysis is processed by the AI provider (Cloudflare Workers AI by default). Review that provider's terms before using any real data.
 - Use fictional or approved data in the demo.
 
 ## Before using real company data
 
-This demo is not approved for confidential documents. Before real use, add at least: company single sign on (for example Microsoft Entra ID) instead of a shared password, a data processing review of the Claude API under your company's policy, and hosting in an approved environment.
+This demo is not approved for confidential documents. Before real use, add at least: company single sign on (for example Microsoft Entra ID) instead of a shared password, a data processing review of the AI provider under your company's policy, and hosting in an approved environment.
 
 ## Reporting a problem
 

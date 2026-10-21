@@ -3,7 +3,6 @@
 // This means the backend can only be used for tender analysis.
 
 const NA = "Information Not Provided";
-const MAX_PROMPT_BYTES = 250_000;
 const enc = new TextEncoder();
 
 export const SYSTEM = `You are a senior bid manager who analyses public sector and enterprise tenders.
@@ -22,11 +21,11 @@ const clip = (s, n) => {
 const arr = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
 
 /** Shrinks the prompt until it fits the size cap. */
-function fit(build) {
+function fit(build, maxBytes) {
   let scale = 1;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 16; i++) {
     const p = build(scale);
-    if (enc.encode(p).length <= MAX_PROMPT_BYTES) return p;
+    if (enc.encode(p).length <= maxBytes) return p;
     scale *= 0.82;
   }
   const err = new Error("prompt_too_large");
@@ -46,7 +45,7 @@ function docBlock(d, max) {
 export const TASKS = {
   extract: {
     maxTokens: 6000,
-    build(input) {
+    build(input, maxBytes) {
       const tender = clip(input.tender, 220_000);
       if (tender.trim().length < 200) { const e = new Error("tender_too_short"); e.code = "bad_request"; throw e; }
       const name = clip(String(input.tenderName || "pasted text"), 200);
@@ -70,19 +69,19 @@ Reply with one JSON object in this shape:
 List every key personnel role the tender names. In experienceRequirements, include every request for previous work, similar projects, references, case studies or company experience. Use an empty array if there are none.
 
 <TENDER name="${name.replace(/"/g, "'")}">
-${clip(tender, Math.floor(200_000 * sc))}
-</TENDER>`);
+${clip(tender, Math.floor(maxBytes * 0.9 * sc))}
+</TENDER>`, maxBytes);
     },
   },
 
   cv: {
     maxTokens: 6000,
-    build(input) {
+    build(input, maxBytes) {
       const roles = arr(input.roles, 20);
       const cvs = cleanDocs(input.docs, 30);
       if (!roles.length || !cvs.length) { const e = new Error("missing_roles_or_cvs"); e.code = "bad_request"; throw e; }
       return fit(sc => {
-        const per = Math.max(1500, Math.floor((160_000 * sc) / cvs.length));
+        const per = Math.max(500, Math.floor((maxBytes * 0.75 * sc) / cvs.length));
         return `Match the consultant CVs below to the roles the tender asks for.
 - A CV may appear under more than one role.
 - Score "match" from 0 to 100 against the role's stated requirements only (qualifications, certifications, years, experience, skills). Missing a stated certification or the minimum years is a clear gap.
@@ -97,20 +96,20 @@ ${clip(JSON.stringify(roles, null, 1), 20_000)}
 
 CVS (${cvs.length}):
 ${cvs.map(d => docBlock(d, per)).join("\n\n")}`;
-      });
+      }, maxBytes);
     },
   },
 
   work: {
     maxTokens: 7000,
-    build(input) {
+    build(input, maxBytes) {
       const reqs = arr(input.reqs, 15);
       const docs = cleanDocs(input.docs, 35);
       if (!reqs.length || !docs.length) { const e = new Error("missing_requirements_or_docs"); e.code = "bad_request"; throw e; }
       const today = new Date().toISOString().slice(0, 10);
       const scope = clip(String(input.summary || ""), 2000) + " Deliverables: " + arr(input.deliverables, 30).map(d => clip(String(d), 300)).join("; ");
       return fit(sc => {
-        const per = Math.max(1200, Math.floor((170_000 * sc) / docs.length));
+        const per = Math.max(400, Math.floor((maxBytes * 0.75 * sc) / docs.length));
         return `The tender asks for proof of previous work. Find which documents in the bidder's folder support each requirement.
 - Today's date is ${today}. Use it to judge how recent a project is.
 - Check each project against every rule in the requirement (value, age, sector, type of work). Count a reference letter as found only if a letter in the folder clearly matches that project and client.
@@ -127,7 +126,7 @@ TENDER SCOPE (for judging similarity): ${scope}
 
 DOCUMENTS FROM THE FOLDER (${docs.length}):
 ${docs.map(d => docBlock(d, per)).join("\n\n")}`;
-      });
+      }, maxBytes);
     },
   },
 };

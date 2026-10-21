@@ -8,34 +8,36 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 
 It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters) and a sample tender, so it can be shown without any real company data.
 
+Live site: https://merhawi-hailu.github.io/rfp-bid-desk/
+
 ## How it is built
 
 ```
-Browser (GitHub Pages)  ──password login──▶  Cloudflare Worker  ──API key (secret)──▶  Claude API
-   web/                                         worker/
+Browser (GitHub Pages)  ──password login──▶  Cloudflare Worker  ──▶  Cloudflare Workers AI (free)
+   web/                                         worker/              or Claude API (optional, paid)
 ```
 
 - **web/** is a static site served by GitHub Pages. It holds no secrets.
-- **worker/** is the backend. It checks the demo password, holds the Claude API key as a Cloudflare secret, builds the prompts, and calls Claude.
+- **worker/** is the backend. It checks the demo password, builds the prompts, and calls the AI model.
+- By default the AI is **Cloudflare Workers AI** (Llama 4 Scout). It is free within a daily allowance and **needs no API key**.
 
 See [SECURITY.md](SECURITY.md) for the security controls.
 
-## Setup (about 20 minutes, one time)
+## Setup (about 15 minutes, one time)
 
-You need: a GitHub account, a free Cloudflare account, and a Claude API key from [console.anthropic.com](https://console.anthropic.com) with billing set up.
+You need a GitHub account and a free Cloudflare account. No AI API key is needed.
 
 ### 1. Deploy the backend to Cloudflare
 
-On your laptop, with Node.js 20 or newer:
+On a laptop where you can install software, with Node.js 20 or newer:
 
 ```bash
 git clone https://github.com/Merhawi-Hailu/rfp-bid-desk.git
 cd rfp-bid-desk/worker
 npm install
-npx wrangler login            # opens the browser to sign in to Cloudflare
-npx wrangler secret put ANTHROPIC_API_KEY   # paste your Claude API key
-npx wrangler secret put DEMO_PASSWORD       # choose the password you will give stakeholders
-npx wrangler secret put SESSION_SECRET      # paste a long random string (see below)
+npx wrangler login                     # opens the browser to sign in to Cloudflare
+npx wrangler secret put DEMO_PASSWORD  # choose the password you will give stakeholders
+npx wrangler secret put SESSION_SECRET # paste a long random string (see below)
 npx wrangler deploy
 ```
 
@@ -52,34 +54,44 @@ In GitHub: **Settings → Secrets and variables → Actions → Variables → Ne
 - Name: `API_URL`
 - Value: the backend address from step 1 (no slash at the end)
 
-### 3. Turn on GitHub Pages
+Then go to **Actions → Deploy web app to GitHub Pages → Run workflow**.
 
-In GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+### 3. Try it
 
-Then go to **Actions → Deploy web app to GitHub Pages → Run workflow**. When it finishes, the site is at `https://merhawi-hailu.github.io/rfp-bid-desk/`.
+Open the live site, sign in with the demo password, click **Load the sample tender**, then **Analyse tender**.
 
-> GitHub Pages from a **private** repository needs a paid GitHub plan (Pro, Team or Enterprise). On the free plan, either upgrade or make the repository public. Making it public is safe from a secrets point of view, because no secrets are stored in the code, but the code and fictional demo data become visible.
-
-### 4. Check the allowed web address
-
-`worker/wrangler.toml` sets `ALLOWED_ORIGINS = "https://merhawi-hailu.github.io"`. The backend refuses calls from any other website. If you use a custom domain, add it there (comma separated) and redeploy the backend.
-
-### 5. Optional: deploy the backend automatically
+### Optional: deploy the backend automatically
 
 To redeploy the backend on every push, add these repository **secrets**:
 
-- `CLOUDFLARE_API_TOKEN`: create one in Cloudflare with the "Edit Cloudflare Workers" template
+- `CLOUDFLARE_API_TOKEN`: create one in Cloudflare with the "Edit Cloudflare Workers" template, and add the "Workers AI: Read" permission
 - `CLOUDFLARE_ACCOUNT_ID`: shown on the Cloudflare dashboard
 
 Without them, the workflow still runs the tests and skips the deploy.
+
+## The free AI allowance
+
+- Cloudflare's free plan gives **10,000 neurons per day**. It resets at 00:00 UTC (02:00 South African time).
+- One demo run with the sample tender uses roughly 1,000 neurons, so expect about **10 runs a day**. Long real tenders use more.
+- When the allowance runs out, the app says so and asks you to try again after the reset.
+
+## Switching to Claude later
+
+If you get a Claude API key later, and your company allows it:
+
+1. `npx wrangler secret put ANTHROPIC_API_KEY`
+2. In `worker/wrangler.toml`, set `AI_PROVIDER = "anthropic"`
+3. `npx wrangler deploy`
+
+No other code changes are needed.
 
 ## Changing settings later
 
 | What | Where |
 |---|---|
-| Demo password | `npx wrangler secret put DEMO_PASSWORD` (old logins stop working after `SESSION_SECRET` changes or tokens expire) |
+| Demo password | `npx wrangler secret put DEMO_PASSWORD` |
 | Sign everyone out now | `npx wrangler secret put SESSION_SECRET` with a new value |
-| Claude model | `MODEL` in `worker/wrangler.toml` |
+| AI model | `WORKERS_AI_MODEL` or `CLAUDE_MODEL` in `worker/wrangler.toml` |
 | Login length | `SESSION_HOURS` in `worker/wrangler.toml` (1 to 24) |
 | Rate limits | `[[ratelimits]]` in `worker/wrangler.toml` |
 
@@ -94,4 +106,5 @@ cd worker && npm test
 - Saved analyses are kept in each person's browser, not on a server.
 - Folders opened from a laptop are read in the browser. Only the text needed for an analysis is sent to the backend, and the backend does not store it.
 - Scanned PDFs without a text layer cannot be read.
+- The free model is less accurate than Claude on long or messy tenders. If a step comes back in the wrong shape, run it again.
 - Use fictional or approved data only. Do not load confidential client documents into a demo.

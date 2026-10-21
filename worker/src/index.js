@@ -6,14 +6,19 @@
 //   GET  /api/health                            -> { ok: true }
 //
 // Secrets (set with `npx wrangler secret put NAME`, never in code):
-//   ANTHROPIC_API_KEY  Claude API key
 //   DEMO_PASSWORD      the shared demo password
 //   SESSION_SECRET     a long random string used to sign login tokens
+//   ANTHROPIC_API_KEY  only needed when AI_PROVIDER is "anthropic"
 //
 // Plain settings (wrangler.toml [vars]):
 //   ALLOWED_ORIGINS    comma separated list of web origins allowed to call the API
-//   MODEL              Claude model id
+//   AI_PROVIDER        "workers-ai" (free, default) or "anthropic" (Claude, paid)
+//   WORKERS_AI_MODEL   Cloudflare Workers AI model id
+//   CLAUDE_MODEL       Claude model id
 //   SESSION_HOURS      how long a login lasts (default 8)
+//
+// Binding (wrangler.toml [ai]):
+//   AI                 Cloudflare Workers AI. Needs no API key.
 
 import { SYSTEM, TASKS, parseJson } from "./prompts.js";
 
@@ -76,8 +81,49 @@ async function analyze(request, env, cors) {
   const body = await readJson(request, MAX_BODY_BYTES);
   const task = TASKS[body.task];
   if (!task) return json({ error: "bad_request" }, 400, cors);
-  const prompt = task.build(body);
+  const provider = providerOf(env);
+  const prompt = task.build(body, PROMPT_BYTES[provider]);
 
+  const out = provider === "anthropic"
+    ? await runClaude(env, prompt, task.maxTokens)
+    : await runWorkersAi(env, prompt, task.maxTokens);
+  if (out.error) return json({ error: out.error }, out.error === "daily_limit" ? 429 : 502, cors);
+
+  const result = out.value && typeof out.value === "object" ? out.value : parseJson(out.text);
+  if (!result || typeof result !== "object") return json({ error: "invalid_json" }, 502, cors);
+  return json({ result, truncated: Boolean(out.truncated), provider }, 200, cors);
+}
+
+/* ---------------- AI providers ---------------- */
+
+// How much text each provider is given per request. Workers AI is kept smaller
+// so the free daily allowance covers more demo runs.
+const PROMPT_BYTES = { "workers-ai": 120_000, anthropic: 250_000 };
+
+function providerOf(env) {
+  return String(env.AI_PROVIDER || "workers-ai").toLowerCase() === "anthropic" ? "anthropic" : "workers-ai";
+}
+
+async function runWorkersAi(env, prompt, maxTokens) {
+  try {
+    const r = await env.AI.run(env.WORKERS_AI_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct", {
+      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.2,
+    });
+    const resp = r && r.response;
+    return typeof resp === "string" ? { text: resp } : { value: resp };
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    // Log a short reason only. Never log tender or CV content.
+    console.error("workers_ai_error", msg.slice(0, 200));
+    if (/4006|neuron|daily free allocation/i.test(msg)) return { error: "daily_limit" };
+    if (/3040|capacity|overloaded|too many/i.test(msg)) return { error: "busy" };
+    return { error: "upstream_error" };
+  }
+}
+
+async function runClaude(env, prompt, maxTokens) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -86,30 +132,28 @@ async function analyze(request, env, cors) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: env.MODEL || "claude-sonnet-5-5",
-      max_tokens: task.maxTokens,
+      model: env.CLAUDE_MODEL || "claude-sonnet-5-5",
+      max_tokens: maxTokens,
       system: SYSTEM,
       messages: [{ role: "user", content: prompt }],
     }),
   });
-
   if (!res.ok) {
     // Log the status only. Never log tender or CV content.
     console.error("anthropic_error", res.status);
-    const code = res.status === 429 || res.status === 529 ? "busy" : res.status === 401 ? "server_not_configured" : "upstream_error";
-    return json({ error: code }, 502, cors);
+    return { error: res.status === 429 || res.status === 529 ? "busy" : res.status === 401 ? "server_not_configured" : "upstream_error" };
   }
   const data = await res.json();
   const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-  const result = parseJson(text);
-  if (!result || typeof result !== "object") return json({ error: "invalid_json" }, 502, cors);
-  return json({ result, truncated: data.stop_reason === "max_tokens" }, 200, cors);
+  return { text, truncated: data.stop_reason === "max_tokens" };
 }
 
 /* ---------------- security helpers ---------------- */
 
 function isConfigured(env) {
-  return Boolean(env.ANTHROPIC_API_KEY && env.DEMO_PASSWORD && env.SESSION_SECRET && String(env.SESSION_SECRET).length >= 32);
+  const base = Boolean(env.DEMO_PASSWORD && env.SESSION_SECRET && String(env.SESSION_SECRET).length >= 32);
+  const ai = providerOf(env) === "anthropic" ? Boolean(env.ANTHROPIC_API_KEY) : Boolean(env.AI && typeof env.AI.run === "function");
+  return base && ai;
 }
 
 function corsHeaders(origin) {
