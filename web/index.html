@@ -36,6 +36,7 @@
       <button class="tab" role="tab" id="tab-analyse" aria-selected="true" data-panel="analyse">Analyse tender</button>
       <button class="tab" role="tab" id="tab-repo" aria-selected="false" data-panel="repo">Document folder <span class="n" id="docCount">0</span></button>
       <button class="tab" role="tab" id="tab-cvs" aria-selected="false" data-panel="cvs">CV check <span class="n due" id="cvDue">0</span></button>
+      <button class="tab" role="tab" id="tab-certs" aria-selected="false" data-panel="certs">Cert check <span class="n due" id="certDue">0</span></button>
       <button class="tab" role="tab" id="tab-saved" aria-selected="false" data-panel="saved">Saved <span class="n" id="runCount">0</span></button>
       <button class="tab" id="logoutBtn" type="button">Sign out</button>
     </nav>
@@ -152,6 +153,24 @@
       </div>
       <div class="cvsummary" id="cvSummary"></div>
       <div id="cvTable"></div>
+    </div>
+  </section>
+
+  <!-- CERT CHECK -->
+  <section class="panel" id="panel-certs" hidden>
+    <div class="box cvbox">
+      <div class="cvhead">
+        <div class="t">
+          <p class="eyebrow">Certificate proof</p>
+          <h2>Do the CVs match the certificates on file?</h2>
+          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate in the folder, matched by the holder's name and the certification. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand.</p>
+        </div>
+        <div class="cvsettings">
+          <label class="toggle"><input type="checkbox" id="certProblems"><div><b>Only show problems</b></div></label>
+        </div>
+      </div>
+      <div class="cvsummary" id="certSummary"></div>
+      <div class="certlist" id="certList"></div>
     </div>
   </section>
 

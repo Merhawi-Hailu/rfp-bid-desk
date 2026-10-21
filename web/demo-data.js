@@ -150,6 +150,12 @@ Certification: Microsoft Certified: Power BI Data Analyst Associate (PL-300)
 Issued: 26 June 2023
 Expires: 26 June 2026
 Credential ID: DEMO-PL300-0002` },
+  { kind: "cert", path: `${D}/Certificates/Johan van Wyk - DP-600 certificate.pdf`, title: "Johan van Wyk - DP-600 certificate", text: `CERTIFICATE (fictional demo data)
+Holder: Johan van Wyk
+Certification: Microsoft Certified: Fabric Analytics Engineer Associate (DP-600)
+Issued: 2 March 2026
+Expires: 2 March 2027
+Credential ID: DEMO-DP600-0005` },
   { kind: "cert", path: `${D}/Certificates/Lerato Nkosi - PMP certificate.pdf`, title: "Lerato Nkosi - PMP certificate", text: `CERTIFICATE (fictional demo data)
 Holder: Lerato Nkosi
 Certification: Project Management Professional (PMP), Project Management Institute

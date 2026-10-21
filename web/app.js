@@ -226,7 +226,7 @@ $("#addForm").addEventListener("submit", async e => {
 let openPrev = null;
 function renderTree() {
   const docs = allDocs(), box = $("#tree");
-  renderCvCheck();
+  renderCvCheck(); renderCertCheck();
   if (!docs.length) { box.innerHTML = `<header><h2>Document folder</h2></header><p class="emptybig">No documents. Turn on the demo repository on the Analyse tab, open a folder, or add documents.</p>`; return; }
   const groups = {};
   docs.forEach(d => { const dir = d.path.split("/").slice(0, -1).join("/") || "(top level)"; (groups[dir] ||= []).push(d); });
@@ -413,6 +413,205 @@ $("#cvTable").addEventListener("click", e => {
   }
 });
 $("#cvSummary").addEventListener("click", e => { if (e.target.closest("#bulkMail")) toast("Opening your email app with everyone overdue in BCC."); });
+
+/* ---------------- CV vs certificate check ---------------- */
+const CERT_HEAD = /^\s*[-•*]?\s*(?:professional\s+)?(?:certifications?|certificates?|accreditations?|registrations?|licen[cs]es?)(?:\s+(?:and|&)\s+[a-z]+)?\s*[:\-]\s*(.*)$/i;
+const NEXT_HEAD = /^\s*(?:experience|key projects|projects|skills|key skills|education|qualifications|employment|work history|career|languages|references|summary|profile|memberships|publications|awards)\b[^:\n]{0,30}:/i;
+const EXAM_CODE = /\b(?:AZ|DP|PL|AI|MS|SC|MB|MD|SY|CS)-\d{3}\b/gi;
+const KNOWN_CERT = /\b(PMP|PRINCE2|CAPM|PMI-ACP|CISSP|CISA|CISM|CRISC|ITIL|TOGAF|CSM|CSPO|CBAP|CFA|COBIT|SAFe)\b/i;
+const LEVELS = ["foundation", "practitioner", "associate", "expert", "professional", "specialist", "fundamentals"];
+const CERT_STOP = new Set(["microsoft", "certified", "certification", "certificate", "associate", "the", "and", "for", "with", "professional"]);
+
+/** Lists the certifications a CV says the person holds. */
+function certClaims(text) {
+  const lines = String(text || "").split(/\r?\n/), parts = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(CERT_HEAD); if (!m) continue;
+    if (m[1].trim()) parts.push(m[1]);
+    for (let j = i + 1; j < lines.length; j++) {
+      const l = lines[j];
+      if (!l.trim()) { if (j > i + 1) break; continue; }
+      if (NEXT_HEAD.test(l) || CERT_HEAD.test(l)) break;
+      parts.push(l);
+    }
+  }
+  const items = [];
+  parts.join("\n").split(/\n|;|•/).forEach(chunk =>
+    chunk.split(/(?<=[)\d])\.\s+|\.\s+(?=[A-Z])/).forEach(x => {
+      const t = x.replace(/^[\s\-*]+|[\s.,]+$/g, "");
+      if (t.length >= 2 && !/^(no|none|not)\b/i.test(t)) items.push(t);
+    }));
+  const seen = new Set(), out = [];
+  for (const t of items) {
+    const c = claimInfo(t); if (seen.has(c.key)) continue; seen.add(c.key); out.push(c);
+  }
+  for (const code of (String(text || "").match(EXAM_CODE) || [])) {
+    const k = code.toUpperCase(); if (seen.has(k)) continue; seen.add(k);
+    out.push({ text: `${k} (mentioned in the CV)`, code: k, key: k, year: null });
+  }
+  return out;
+}
+function claimInfo(t) {
+  const exam = (t.match(EXAM_CODE) || [])[0], known = (t.match(KNOWN_CERT) || [])[0];
+  const code = exam ? exam.toUpperCase() : known ? known.toUpperCase() : null;
+  const year = (t.match(/\b(19|20)\d{2}\b/) || [])[0] || null;
+  const level = LEVELS.find(l => new RegExp("\\b" + l + "\\b", "i").test(t)) || null;
+  return { text: t, code, year, level: code && !exam ? level : null, key: code ? code + (level && !exam ? " " + level : "") : norm(t) };
+}
+/** The person a certificate belongs to, if the file says. */
+function certHolder(doc) {
+  const m = String(doc.text || "").match(/(?:holder|awarded to|issued to|name|this is to certify that)\s*[:\-]?\s*([A-Za-z][A-Za-z .'-]{2,60})/i);
+  return m ? m[1].trim().replace(/\s+(has|is|was)\b.*$/i, "") : "";
+}
+function belongsTo(doc, name) {
+  const n = norm(name); if (!n) return false;
+  const h = norm(certHolder(doc));
+  if (h) return h === n || h.includes(n) || n.includes(h);
+  return norm(doc.path).includes(n) || norm(doc.text.slice(0, 800)).includes(n);
+}
+function claimMatches(claim, doc) {
+  const hay = norm(doc.path + " " + doc.text);
+  if (claim.code) {
+    if (!hay.includes(norm(claim.code))) return false;
+    if (claim.level) { const other = LEVELS.filter(l => l !== claim.level && hay.includes(l)); if (other.length && !hay.includes(claim.level)) return false; }
+    return true;
+  }
+  const words = norm(claim.text).split(" ").filter(w => w.length > 2 && !CERT_STOP.has(w) && !/^\d+$/.test(w));
+  if (!words.length) return false;
+  return words.filter(w => hay.includes(w)).length / words.length >= 0.6;
+}
+const certLinks = () => store.get("bdCertLinks", {});
+
+/** Compares each CV's listed certifications with the certificate files in the folder. */
+function certReport() {
+  const docs = allDocs(), certs = docs.filter(d => d.kind === "cert"), links = certLinks();
+  const people = docs.filter(d => d.kind === "cv").map(cv => {
+    const meta = cvMeta(cv), mine = certs.filter(d => belongsTo(d, meta.name)), used = new Set();
+    const claims = certClaims(cv.text).map(cl => {
+      const lk = links[cv.path + "::" + cl.key];
+      let doc = lk ? findDoc(lk) : null, how = doc ? "linked by you" : "";
+      if (!doc) { doc = mine.find(d => claimMatches(cl, d)) || null; if (doc) how = "matched by name and certification"; }
+      if (doc) used.add(doc.path);
+      const exp = doc ? expiryInfo(doc, null) : null;
+      const status = !doc ? { key: "missing", cls: "bad", label: "No proof in folder" }
+        : exp.key === "expired" ? { key: "expired", cls: "bad", label: exp.label }
+        : exp.key === "soon" ? { key: "soon", cls: "warn", label: exp.label }
+        : exp.key === "valid" ? { key: "ok", cls: "ok", label: exp.label }
+        : { key: "ok", cls: "ok", label: "Proof found (no expiry date)" };
+      return { ...cl, doc, how, status };
+    });
+    const extra = mine.filter(d => !used.has(d.path)).map(d => ({ doc: d, exp: expiryInfo(d, null) }));
+    return { cv, meta, claims, extra };
+  });
+  const all = people.flatMap(p => p.claims);
+  return {
+    people,
+    totals: {
+      claims: all.length,
+      ok: all.filter(c => c.status.key === "ok").length,
+      missing: all.filter(c => c.status.key === "missing").length,
+      expired: all.filter(c => c.status.key === "expired").length,
+      soon: all.filter(c => c.status.key === "soon").length,
+      extra: people.reduce((n, p) => n + p.extra.length, 0),
+    },
+  };
+}
+
+function certRequestText(p) {
+  const first = p.meta.name.split(/\s+/)[0] || "there";
+  const due = fmtDay(new Date(Date.now() + 14 * DAY));
+  const sender = String(store.get("bdSender", "") || "").trim();
+  const missing = p.claims.filter(c => c.status.key === "missing").map(c => `- ${c.text} (no copy on file)`);
+  const expired = p.claims.filter(c => c.status.key === "expired" || c.status.key === "soon").map(c => `- ${c.text} (${lowerFirst(c.status.label)}, please send the renewed certificate)`);
+  const extra = p.extra.map(x => `- ${certTitle(x.doc)}`);
+  const subject = "Please send copies of your certificates for tender submissions";
+  let body = `Hi ${first},
+
+For tender submissions we need a copy of each certificate listed on your CV.`;
+  if (missing.length || expired.length) body += `
+
+We need these:
+${[...missing, ...expired].join("\n")}
+
+Please send a PDF copy of each by ${due}. If a certification has lapsed, tell me so we can update your CV.`;
+  if (extra.length) body += `
+
+We also have these certificates on file, but they are not on your CV. Please add them when you next update it:
+${extra.join("\n")}`;
+  body += `
+
+Thank you.
+
+${sender || "[Your name]"}`;
+  return { subject, body };
+}
+function certTitle(doc) {
+  const m = String(doc.text || "").match(/certification\s*:\s*([^\n]+)/i);
+  return m ? m[1].trim() : baseName(doc.path).replace(/\.[^.]+$/, "");
+}
+function renderCertCheck() {
+  const r = certReport(), t = r.totals, onlyProblems = Boolean(store.get("bdCertProblems", false));
+  const badge = $("#certDue"), bad = t.missing + t.expired;
+  badge.textContent = bad; badge.classList.toggle("zero", !bad);
+  $("#certProblems").checked = onlyProblems;
+  if (!r.people.length) {
+    $("#certSummary").innerHTML = "";
+    $("#certList").innerHTML = `<p class="emptybig">No CVs found. Turn on the demo repository, open a folder, or add CVs in the Document folder tab.</p>`;
+    return;
+  }
+  $("#certSummary").innerHTML = `
+    <span class="count"><b>${t.claims}</b> listed in CVs</span>
+    <span class="count ok"><b>${t.ok}</b> proof found</span>
+    <span class="count bad"><b>${t.missing}</b> no proof in folder</span>
+    <span class="count bad"><b>${t.expired}</b> expired</span>
+    <span class="count warn"><b>${t.soon}</b> expiring soon</span>
+    <span class="count warn"><b>${t.extra}</b> on file, not in CV</span>`;
+  const allCerts = allDocs().filter(d => d.kind === "cert");
+  const people = r.people.filter(p => !onlyProblems || p.extra.length || p.claims.some(c => c.status.key !== "ok"));
+  if (!people.length) { $("#certList").innerHTML = `<p class="emptybig">No problems found. Every certificate listed in the CVs has a valid copy on file.</p>`; return; }
+  $("#certList").innerHTML = people.map(p => {
+    const probs = p.claims.filter(c => c.status.key !== "ok").length + p.extra.length;
+    const okMail = SAFE_EMAIL.test(p.meta.email), tx = certRequestText(p);
+    const rows = p.claims.filter(c => !onlyProblems || c.status.key !== "ok").map(c => `<tr>
+        <td>${esc(c.text)}${c.code ? `<span class="evnote">${esc(c.code)}${c.year ? ` · ${esc(c.year)}` : ""}</span>` : ""}</td>
+        <td>${c.doc ? `${fileChip(c.doc.path)}<span class="evnote">${esc(c.how)}</span>` : `<select class="kindsel" data-certlink="${esc(p.cv.path + "::" + c.key)}" aria-label="Link a certificate file for ${esc(c.text)}"><option value="">Link a file...</option>${allCerts.map(d => `<option value="${esc(d.path)}">${esc(baseName(d.path))}</option>`).join("")}</select>`}</td>
+        <td><span class="pill ${c.status.cls}">${esc(c.status.label)}</span>${c.how === "linked by you" ? ` <button class="btn link" type="button" data-certunlink="${esc(p.cv.path + "::" + c.key)}">Unlink</button>` : ""}</td>
+      </tr>`).join("");
+    const extras = p.extra.map(x => `<tr>
+        <td>${esc(certTitle(x.doc))}<span class="evnote">On file, not listed in the CV</span></td>
+        <td>${fileChip(x.doc.path)}</td>
+        <td><span class="pill warn">Add to CV</span></td>
+      </tr>`).join("");
+    return `<section class="evcard certcard">
+      <div class="evhead"><b>${esc(p.meta.name)}</b><span>${fileChip(p.cv.path)} ${probs ? `<span class="pill bad">${probs} to fix</span>` : `<span class="pill ok">All proof on file</span>`}</span></div>
+      ${p.claims.length || p.extra.length ? `<div class="tbl" style="border:0;border-radius:0"><table><thead><tr><th>Certification in CV</th><th>Proof in folder</th><th>Status</th></tr></thead><tbody>${rows}${extras}</tbody></table></div>`
+        : `<div class="evrow"><span class="evnote">No certifications are listed in this CV.</span></div>`}
+      ${probs ? `<div class="evrow" style="grid-template-columns:1fr"><div class="acts row">
+        <a class="btn small primary" data-certmail="1" href="${okMail ? esc(mailto(p.meta.email, tx.subject, tx.body)) : "#"}" aria-disabled="${okMail ? "false" : "true"}">Request missing certificates</a>
+        <button class="btn small" type="button" data-certcopy="${esc(p.cv.path)}">Copy message</button>
+        ${okMail ? "" : `<span class="evnote">Add this person's email in the CV check tab to send a request.</span>`}
+      </div></div>` : ""}
+    </section>`;
+  }).join("");
+}
+$("#certProblems").addEventListener("change", e => { store.set("bdCertProblems", e.target.checked); renderCertCheck(); });
+$("#certList").addEventListener("change", e => {
+  const s = e.target.closest("[data-certlink]"); if (!s || !s.value) return;
+  const all = certLinks(); all[s.dataset.certlink] = s.value; store.set("bdCertLinks", all);
+  toast("Certificate linked"); renderCertCheck();
+});
+$("#certList").addEventListener("click", e => {
+  const u = e.target.closest("[data-certunlink]");
+  if (u) { const all = certLinks(); delete all[u.dataset.certunlink]; store.set("bdCertLinks", all); renderCertCheck(); return; }
+  const m = e.target.closest("[data-certmail]");
+  if (m) { if (m.getAttribute("aria-disabled") === "true") { e.preventDefault(); toast("Add the person's email in the CV check tab first."); } else toast("Opening your email app. Check the message, then press Send."); return; }
+  const c = e.target.closest("[data-certcopy]");
+  if (c) {
+    const p = certReport().people.find(x => x.cv.path === c.dataset.certcopy); if (!p) return;
+    const tx = certRequestText(p);
+    navigator.clipboard.writeText(`Subject: ${tx.subject}\n\n${tx.body}`).then(() => toast("Message copied. Paste it into Outlook, Teams or WhatsApp."), () => toast("Copy is blocked in this browser."));
+  }
+});
 
 /** Finds the CV document behind a skills-match candidate. */
 function docForCandidate(cd) {

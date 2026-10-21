@@ -283,3 +283,10 @@ a.btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 .dlghead h2 { overflow-wrap: anywhere; }
 .dlgtext { margin: 0; padding: 16px 18px; font-family: var(--f-mono); font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 55vh; overflow: auto; background: var(--sunk); }
 #dlgActions { padding: 12px 18px; }
+
+/* Cert check */
+.certlist { padding: 16px 20px 20px; display: grid; gap: 14px; }
+.certcard .evhead span { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.certcard table td { vertical-align: middle; }
+.certcard .evnote { margin-top: 2px; }
+.certcard .kindsel { max-width: 260px; }
