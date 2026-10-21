@@ -30,20 +30,58 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check Cloudflare secrets are set
+
+      - name: Check the deploy secrets are set
         id: check
         env:
           TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PASSWORD: ${{ secrets.DEMO_PASSWORD }}
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN is not set, so the backend was not deployed. Deploy it by hand with 'npx wrangler deploy' (see the README)."
+          missing=""
+          [ -z "$TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$ACCOUNT" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -z "$PASSWORD" ] && missing="$missing DEMO_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::warning::Backend not deployed. Missing repository secrets:$missing (see the README)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.check.outputs.ready == 'true'
+
+      # A fresh signing key on every deploy. Logins from before the deploy end,
+      # which is fine for a demo and means no one has to manage this secret.
+      - name: Make a new session signing key
+        if: steps.check.outputs.ready == 'true'
+        id: key
+        run: |
+          key=$(openssl rand -hex 32)
+          echo "::add-mask::$key"
+          echo "value=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloudflare
+        if: steps.check.outputs.ready == 'true'
+        id: deploy
         uses: cloudflare/wrangler-action@v3
+        env:
+          DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+          SESSION_SECRET: ${{ steps.key.outputs.value }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
+          wranglerVersion: "4"
+          secrets: |
+            DEMO_PASSWORD
+            SESSION_SECRET
+
+      - name: Show the backend address
+        if: steps.check.outputs.ready == 'true'
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          echo "### Backend deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Address: \`${URL:-see the deploy log above}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Set this as the repository variable \`API_URL\`, then run the Pages workflow." >> "$GITHUB_STEP_SUMMARY"

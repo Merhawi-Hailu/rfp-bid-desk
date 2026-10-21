@@ -11,7 +11,7 @@ This is a stakeholder demo. These controls are in place.
 ## Access
 
 - **Password login.** The backend checks the demo password using a constant time comparison, so timing cannot reveal it.
-- **Signed sessions.** A correct password returns a token signed with HMAC SHA-256. It expires after `SESSION_HOURS` (8 by default). Changing `SESSION_SECRET` signs everyone out.
+- **Signed sessions.** A correct password returns a token signed with HMAC SHA-256. It expires after `SESSION_HOURS` (8 by default). A new signing key is made on every backend deploy, so redeploying signs everyone out.
 - The token is kept in the browser's session storage, so it is cleared when the tab closes.
 
 ## Abuse protection

@@ -23,51 +23,55 @@ Browser (GitHub Pages)  ──password login──▶  Cloudflare Worker  ──
 
 See [SECURITY.md](SECURITY.md) for the security controls.
 
-## Setup (about 15 minutes, one time)
+## Setup (about 15 minutes, one time, all in the browser)
 
-You need a GitHub account and a free Cloudflare account. No AI API key is needed.
+You need a GitHub account and a free Cloudflare account. No AI API key and no software install is needed. GitHub deploys the backend for you.
 
-### 1. Deploy the backend to Cloudflare
+### 1. In Cloudflare
 
-On a laptop where you can install software, with Node.js 20 or newer:
+1. Open **Workers & Pages** once, so Cloudflare creates your free `workers.dev` address.
+2. Copy your **Account ID** (shown on the Workers & Pages overview, or in the account home page).
+3. Go to **My Profile → API Tokens → Create Token**, use the **Edit Cloudflare Workers** template, and also add the permission **Account · Workers AI · Read**. Create it and copy the token. It is shown only once.
 
-```bash
-git clone https://github.com/Merhawi-Hailu/rfp-bid-desk.git
-cd rfp-bid-desk/worker
-npm install
-npx wrangler login                     # opens the browser to sign in to Cloudflare
-npx wrangler secret put DEMO_PASSWORD  # choose the password you will give stakeholders
-npx wrangler secret put SESSION_SECRET # paste a long random string (see below)
-npx wrangler deploy
-```
+### 2. In GitHub: add three repository secrets
 
-To make a good `SESSION_SECRET`, run `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and paste the result.
+**Settings → Secrets and variables → Actions → Secrets → New repository secret**
 
-`wrangler deploy` prints the backend address, for example `https://rfp-bid-desk-api.<your-name>.workers.dev`. Copy it.
+| Name | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | the token from step 1.3 |
+| `CLOUDFLARE_ACCOUNT_ID` | the Account ID from step 1.2 |
+| `DEMO_PASSWORD` | the password you will give stakeholders |
 
-Check it works: open `<backend address>/api/health`. You should see `"configured": true`.
+A session signing key is made automatically on every deploy, so there is nothing else to set.
 
-### 2. Point the web app at the backend
+### 3. Deploy the backend
 
-In GitHub: **Settings → Secrets and variables → Actions → Variables → New repository variable**
+**Actions → Test and deploy backend (Cloudflare Worker) → Run workflow**. When it finishes, its summary shows the backend address, for example `https://rfp-bid-desk-api.<your-name>.workers.dev`.
 
-- Name: `API_URL`
-- Value: the backend address from step 1 (no slash at the end)
+Check it: open `<backend address>/api/health`. You should see `"configured": true`.
 
-Then go to **Actions → Deploy web app to GitHub Pages → Run workflow**.
+### 4. Point the web app at the backend
 
-### 3. Try it
+**Settings → Secrets and variables → Actions → Variables → New repository variable**: name `API_URL`, value the backend address (no slash at the end).
+
+Then **Actions → Deploy web app to GitHub Pages → Run workflow**.
+
+### 5. Try it
 
 Open the live site, sign in with the demo password, click **Load the sample tender**, then **Analyse tender**.
 
-### Optional: deploy the backend automatically
+### Deploying from a laptop instead
 
-To redeploy the backend on every push, add these repository **secrets**:
+If you prefer the command line (Node.js 20 or newer):
 
-- `CLOUDFLARE_API_TOKEN`: create one in Cloudflare with the "Edit Cloudflare Workers" template, and add the "Workers AI: Read" permission
-- `CLOUDFLARE_ACCOUNT_ID`: shown on the Cloudflare dashboard
-
-Without them, the workflow still runs the tests and skips the deploy.
+```bash
+cd worker && npm install
+npx wrangler login
+npx wrangler secret put DEMO_PASSWORD
+npx wrangler secret put SESSION_SECRET   # a long random string
+npx wrangler deploy
+```
 
 ## The free AI allowance
 
@@ -79,9 +83,8 @@ Without them, the workflow still runs the tests and skips the deploy.
 
 If you get a Claude API key later, and your company allows it:
 
-1. `npx wrangler secret put ANTHROPIC_API_KEY`
-2. In `worker/wrangler.toml`, set `AI_PROVIDER = "anthropic"`
-3. `npx wrangler deploy`
+1. Add the key as a Worker secret named `ANTHROPIC_API_KEY` (Cloudflare dashboard → your Worker → Settings → Variables and Secrets)
+2. In `worker/wrangler.toml`, set `AI_PROVIDER = "anthropic"` and push
 
 No other code changes are needed.
 
@@ -89,8 +92,8 @@ No other code changes are needed.
 
 | What | Where |
 |---|---|
-| Demo password | `npx wrangler secret put DEMO_PASSWORD` |
-| Sign everyone out now | `npx wrangler secret put SESSION_SECRET` with a new value |
+| Demo password | Change the `DEMO_PASSWORD` repository secret, then rerun the backend workflow |
+| Sign everyone out now | Rerun the backend workflow (it makes a new signing key) |
 | AI model | `WORKERS_AI_MODEL` or `CLAUDE_MODEL` in `worker/wrangler.toml` |
 | Login length | `SESSION_HOURS` in `worker/wrangler.toml` (1 to 24) |
 | Rate limits | `[[ratelimits]]` in `worker/wrangler.toml` |
