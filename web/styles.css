@@ -225,3 +225,32 @@ ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: 0
 .gate .err { padding: 8px 10px; }
 .who { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); }
 .gate .tag { align-self: flex-start; }
+
+/* CV check */
+.tab .n.due { background: var(--bad-bg); color: var(--bad); border-radius: 99px; padding: 0 6px; opacity: 1; }
+.tab .n.due.zero { background: none; color: inherit; opacity: 0.8; }
+.cvbox { overflow: hidden; }
+.cvhead { padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: flex-end; border-bottom: 1px solid var(--line); }
+.cvhead .t { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cvhead .note { max-width: 70ch; }
+.cvsettings { display: flex; flex-wrap: wrap; gap: 12px; }
+.cvsettings > div { min-width: 160px; }
+.cvsummary { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px; align-items: center; border-bottom: 1px solid var(--line); }
+.cvsummary .count { display: inline-flex; gap: 6px; align-items: baseline; padding: 6px 12px; border-radius: var(--r); background: var(--sunk); font-size: 0.86rem; }
+.cvsummary .count b { font-family: var(--f-mono); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.cvsummary .count.bad b { color: var(--bad); }
+.cvsummary .count.warn b { color: var(--warn); }
+.cvsummary .count.ok b { color: var(--ok); }
+.cvsummary .spacer { flex: 1 1 auto; }
+.cvtable td { vertical-align: middle; }
+.cvtable td.who b { display: block; }
+.cvtable td.who span { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.cvtable input { font: inherit; font-size: 0.84rem; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 5px 8px; width: 100%; min-width: 180px; }
+.cvtable input[type="date"] { min-width: 140px; }
+.cvtable .src { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.cvtable .age { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cvtable .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cvtable .sent { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+a.btn { text-decoration: none; display: inline-block; }
+a.btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+.tagc.stale { background: var(--bad-bg); color: var(--bad); }

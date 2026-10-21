@@ -5,6 +5,7 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 1. **Extracts the key information**: client, closing date, mandatory items, scoring, the roles asked for, and any previous work the client wants to see.
 2. **Matches CVs to roles**: ranks consultants for each role with a match score, what they meet, and their gaps.
 3. **Finds supporting past work**: scans a folder of project reports and reference letters and shows which ones prove each experience requirement.
+4. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
 
 It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters) and a sample tender, so it can be shown without any real company data.
 
@@ -103,6 +104,14 @@ No other code changes are needed.
 ```bash
 cd worker && npm test
 ```
+
+## CV check
+
+- The last-updated date is read from the CV text, for example `CV last updated: 14 June 2025`. Formats like `2025-06-14`, `14/06/2025` and `June 2025` also work. If no date is written, the file's saved date is used.
+- The owner's email is the first email address in the CV. You can type a different date or email in any row.
+- **Email reminder** opens a draft in your own email app (for example Outlook). Nothing is sent until you press Send.
+- Status rules: **Overdue** at or past the limit, **Due soon** in the last 2 months before it, **Current** otherwise.
+- Settings, typed dates and emails, and the reminder log are kept in your browser.
 
 ## Limits of this demo
 

@@ -4,6 +4,7 @@ const D = "Demo repository";
 const DEMO = [
   { kind: "cv", path: `${D}/CVs/Thandi Mokoena CV.docx`, title: "Thandi Mokoena CV", text: `CURRICULUM VITAE (fictional demo data)
 Thandi Mokoena, Lead Data Engineer, Demo Consulting
+Email: thandi.mokoena@demo-consulting.example | CV last updated: 12 August 2026
 Qualifications: BSc Honours Computer Science, University of Pretoria (2015).
 Certifications: Microsoft Certified: Fabric Data Engineer Associate (DP-700), 2025. Microsoft Certified: Azure Data Engineer Associate (DP-203), 2022.
 Experience: 9 years in data engineering, 5 years in the public sector.
@@ -14,6 +15,7 @@ Key projects:
 Skills: Python, PySpark, SQL, Azure Data Factory, Microsoft Fabric, Delta Lake, data quality frameworks, POPIA compliance.` },
   { kind: "cv", path: `${D}/CVs/Johan van Wyk CV.pdf`, title: "Johan van Wyk CV", text: `CURRICULUM VITAE (fictional demo data)
 Johan van Wyk, BI Developer, Demo Consulting
+Email: johan.vanwyk@demo-consulting.example | CV last updated: 14 June 2025
 Qualifications: National Diploma in Information Technology, Tshwane University of Technology (2017).
 Certifications: Microsoft Certified: Power BI Data Analyst Associate (PL-300), 2023.
 Experience: 6 years building Power BI reports for finance and operations teams.
@@ -24,6 +26,7 @@ Key projects:
 Skills: Power BI, DAX, Power Query, row level security, report design, end user training.` },
   { kind: "cv", path: `${D}/CVs/Lerato Nkosi CV.docx`, title: "Lerato Nkosi CV", text: `CURRICULUM VITAE (fictional demo data)
 Lerato Nkosi, Senior Project Manager, Demo Consulting
+Email: lerato.nkosi@demo-consulting.example | CV last updated: 20 January 2026
 Qualifications: BCom Information Systems, University of the Witwatersrand (2009). MBA (2016).
 Certifications: PMP (2014). PRINCE2 Practitioner (2018).
 Experience: 14 years in project management, 9 years in the public sector (municipalities and provincial departments).
@@ -34,6 +37,7 @@ Key projects:
 Skills: stakeholder management, MFMA procurement rules, project governance, risk management, change management.` },
   { kind: "cv", path: `${D}/CVs/Sipho Dlamini CV.pdf`, title: "Sipho Dlamini CV", text: `CURRICULUM VITAE (fictional demo data)
 Sipho Dlamini, Project Manager, Demo Consulting
+Email: sipho.dlamini@demo-consulting.example | CV last updated: 3 November 2024
 Qualifications: BTech Project Management, University of Johannesburg (2016).
 Certifications: PRINCE2 Foundation (2020).
 Experience: 7 years in project management, mainly private sector (retail and insurance).
@@ -43,6 +47,7 @@ Key projects:
 Skills: agile delivery, Jira, vendor management, budgeting.` },
   { kind: "cv", path: `${D}/CVs/Priya Naidoo CV.docx`, title: "Priya Naidoo CV", text: `CURRICULUM VITAE (fictional demo data)
 Priya Naidoo, Data Scientist, Demo Consulting
+Email: priya.naidoo@demo-consulting.example | CV last updated: 15 December 2025
 Qualifications: MSc Statistics, University of KwaZulu-Natal (2018).
 Certifications: Microsoft Certified: Azure AI Engineer Associate (AI-102), 2024.
 Experience: 6 years in data science and machine learning.
@@ -52,6 +57,7 @@ Key projects:
 Skills: Python, machine learning, forecasting, some Power BI use (no certification).` },
   { kind: "cv", path: `${D}/CVs/Michael Botha CV.pdf`, title: "Michael Botha CV", text: `CURRICULUM VITAE (fictional demo data)
 Michael Botha, Data Engineer, Demo Consulting
+Email: michael.botha@demo-consulting.example
 Qualifications: BEng Computer Engineering, Stellenbosch University (2016).
 Certifications: AWS Certified Data Engineer Associate (2024). No Microsoft certifications.
 Experience: 8 years in data engineering.

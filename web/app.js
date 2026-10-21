@@ -195,7 +195,7 @@ $("#folderInput").addEventListener("change", async e => {
     const f = files[i], path = f.webkitRelativePath || f.name;
     m.textContent = `Reading ${i + 1} of ${files.length}: ${path}`;
     if (f.size > 25e6) { bad.push(path); continue; }
-    try { const { text } = await extractText(f); out.push({ id: "loc" + i, src: "local", kind: classify(path), path, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000) }); }
+    try { const { text } = await extractText(f); out.push({ id: "loc" + i, src: "local", kind: classify(path), path, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null }); }
     catch { bad.push(path); }
   }
   S.local = out; S.localName = root;
@@ -212,7 +212,7 @@ $("#addForm").addEventListener("submit", async e => {
   for (const f of files) {
     try {
       const { text } = await extractText(f);
-      S.added.push({ id: "add" + Math.random().toString(36).slice(2), src: "added", kind, path: `Added documents/${KIND[kind]}/${f.name}`, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000) });
+      S.added.push({ id: "add" + Math.random().toString(36).slice(2), src: "added", kind, path: `Added documents/${KIND[kind]}/${f.name}`, title: f.name.replace(/\.[^.]+$/, ""), text: clip(text, 200000), fileDate: f.lastModified || null });
       added++;
     } catch (err) { probs.push(err.message || `Could not add ${f.name}.`); }
   }
@@ -224,6 +224,7 @@ $("#addForm").addEventListener("submit", async e => {
 let openPrev = null;
 function renderTree() {
   const docs = allDocs(), box = $("#tree");
+  renderCvCheck();
   if (!docs.length) { box.innerHTML = `<header><h2>Document folder</h2></header><p class="emptybig">No documents. Turn on the demo repository on the Analyse tab, open a folder, or add documents.</p>`; return; }
   const groups = {};
   docs.forEach(d => { const dir = d.path.split("/").slice(0, -1).join("/") || "(top level)"; (groups[dir] ||= []).push(d); });
@@ -244,6 +245,187 @@ $("#tree").addEventListener("change", e => {
   const s = e.target.closest("[data-kind]"); if (!s) return;
   const d = [...S.local, ...S.added].find(x => x.id === s.dataset.kind); if (d) { d.kind = s.value; renderSources(); }
 });
+
+/* ---------------- CV freshness check ---------------- */
+const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11 };
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const SAFE_EMAIL = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const DAY = 864e5;
+
+/** Reads one date in common CV formats. Returns a Date or null. */
+function parseDateText(s) {
+  s = String(s || "").trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+  if (m) return mkDate(+m[1], +m[2] - 1, m[3] ? +m[3] : 1);
+  m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/); // day/month/year, as used in South Africa
+  if (m) return mkDate(+m[3], +m[2] - 1, +m[1]);
+  m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
+  if (m && MONTHS[m[2].slice(0, 3).toLowerCase()] != null) return mkDate(+m[3], MONTHS[m[2].slice(0, 3).toLowerCase()], +m[1]);
+  m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (m && MONTHS[m[1].slice(0, 3).toLowerCase()] != null) return mkDate(+m[3], MONTHS[m[1].slice(0, 3).toLowerCase()], +m[2]);
+  m = s.match(/^([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
+  if (m && MONTHS[m[1].slice(0, 3).toLowerCase()] != null) return mkDate(+m[2], MONTHS[m[1].slice(0, 3).toLowerCase()], 1);
+  return null;
+}
+function mkDate(y, mo, d) {
+  if (y < 1990 || y > 2100 || mo < 0 || mo > 11 || d < 1 || d > 31) return null;
+  const dt = new Date(y, mo, d);
+  return dt.getMonth() === mo ? dt : null;
+}
+/** Finds a "last updated" date written in the CV text. */
+function dateFromText(text) {
+  const head = String(text || "").slice(0, 6000);
+  const re = /(?:cv\s+)?(?:last\s+updated|updated\s+on|updated|last\s+revised|revised|date\s+of\s+cv|cv\s+date)\s*[:\-]?\s*([^\n|;]{4,30})/gi;
+  let m;
+  while ((m = re.exec(head))) { const d = parseDateText(m[1]); if (d && d.getTime() <= Date.now() + DAY) return d; }
+  return null;
+}
+const cvOverrides = () => store.get("bdCvMeta", {});
+const reminders = () => store.get("bdReminders", {});
+const cvPolicy = () => Number(store.get("bdCvPolicy", 12)) || 12;
+
+function cvMeta(doc) {
+  const o = cvOverrides()[doc.path] || {};
+  const name = doc.title.replace(/[\s_-]*(curriculum vitae|cv|resume|résumé)$/i, "").replace(/[_-]+/g, " ").trim() || doc.title;
+  const emailText = (doc.text.match(EMAIL_RE) || [])[0] || "";
+  let updated = null, source = "";
+  if (o.date) { updated = parseDateText(o.date); source = "entered by you"; }
+  if (!updated) { updated = dateFromText(doc.text); if (updated) source = "from CV text"; }
+  if (!updated && doc.fileDate) { updated = new Date(doc.fileDate); source = "file saved date"; }
+  const email = o.email || emailText;
+  return { name, email, emailSource: o.email ? "entered by you" : emailText ? "from CV text" : "", updated, source };
+}
+function cvStatus(meta, policy = cvPolicy()) {
+  if (!meta.updated) return { key: "unknown", label: "Date unknown", cls: "na", months: null };
+  const now = new Date();
+  let months = (now.getFullYear() - meta.updated.getFullYear()) * 12 + (now.getMonth() - meta.updated.getMonth());
+  if (now.getDate() < meta.updated.getDate()) months--;
+  months = Math.max(0, months);
+  if (months >= policy) return { key: "overdue", label: "Overdue", cls: "bad", months };
+  if (months >= policy - 2) return { key: "due", label: "Due soon", cls: "warn", months };
+  return { key: "current", label: "Current", cls: "ok", months };
+}
+const ageText = m => (m == null ? "" : m === 0 ? "under 1 month" : m === 1 ? "1 month" : m < 24 ? `${m} months` : `${Math.floor(m / 12)} years ${m % 12 ? (m % 12) + " months" : ""}`.trim());
+const fmtDay = d => d.toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function reminderText(meta, st) {
+  const first = meta.name.split(/\s+/)[0] || "there";
+  const due = fmtDay(new Date(Date.now() + 14 * DAY));
+  const sender = String(store.get("bdSender", "") || "").trim();
+  const when = meta.updated
+    ? `Your CV on file was last updated on ${fmtDay(meta.updated)}, which is ${ageText(st.months)} ago.`
+    : "We could not find a date on your CV on file, so we cannot tell how current it is.";
+  const subject = "Please update your CV for tender submissions";
+  const body = `Hi ${first},
+
+We keep consultant CVs up to date so they are ready for tender submissions. ${when} Our rule is to update CVs at least every ${cvPolicy()} months.
+
+Please send me an updated CV by ${due}. Include:
+- recent projects, with client, your role, dates and value
+- new qualifications and certifications, with dates
+- the date you updated the CV, near the top (for example "CV last updated: ${fmtDay(new Date())}")
+
+Thank you.
+
+${sender || "[Your name]"}`;
+  return { subject, body };
+}
+const mailto = (to, subject, body, bcc) =>
+  `mailto:${to || ""}?${bcc ? "bcc=" + encodeURIComponent(bcc) + "&" : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+function renderCvCheck() {
+  const cvs = allDocs().filter(d => d.kind === "cv");
+  const rows = cvs.map(d => { const meta = cvMeta(d); return { d, meta, st: cvStatus(meta) }; });
+  const order = { overdue: 0, unknown: 1, due: 2, current: 3 };
+  rows.sort((a, b) => order[a.st.key] - order[b.st.key] || (b.st.months ?? 0) - (a.st.months ?? 0));
+  const n = k => rows.filter(r => r.st.key === k).length;
+  const late = n("overdue");
+  const badge = $("#cvDue"); badge.textContent = late; badge.classList.toggle("zero", !late);
+  if ($("#cvPolicy").value !== String(cvPolicy())) $("#cvPolicy").value = String(cvPolicy());
+  if (document.activeElement !== $("#senderName")) $("#senderName").value = store.get("bdSender", "") || "";
+
+  if (!rows.length) {
+    $("#cvSummary").innerHTML = "";
+    $("#cvTable").innerHTML = `<p class="emptybig">No CVs found. Turn on the demo repository, open a folder, or add CVs in the Document folder tab.</p>`;
+    return;
+  }
+  const overdueWithEmail = rows.filter(r => r.st.key === "overdue" && SAFE_EMAIL.test(r.meta.email));
+  const bulk = overdueWithEmail.length
+    ? (() => { const t = reminderText({ name: "team", updated: null }, { months: null });
+        const body = t.body.replace("Hi team,", "Hi all,").replace("We could not find a date on your CV on file, so we cannot tell how current it is.", `Your CV on file is more than ${cvPolicy()} months old.`);
+        return `<a class="btn small" id="bulkMail" href="${esc(mailto("", t.subject, body, overdueWithEmail.map(r => r.meta.email).join(",")))}">Email all overdue (${overdueWithEmail.length})</a>`; })()
+    : "";
+  $("#cvSummary").innerHTML = `
+    <span class="count bad"><b>${late}</b> overdue</span>
+    <span class="count warn"><b>${n("due")}</b> due soon</span>
+    <span class="count ok"><b>${n("current")}</b> current</span>
+    <span class="count"><b>${n("unknown")}</b> date unknown</span>
+    <span class="spacer"></span>${bulk}`;
+
+  const sent = reminders();
+  $("#cvTable").innerHTML = `<div class="tbl" style="border:0;border-radius:0"><table class="cvtable"><thead><tr><th>Consultant</th><th>Owner email</th><th>Last updated</th><th>Age</th><th>Status</th><th>Reminder</th></tr></thead><tbody>
+    ${rows.map(({ d, meta, st }) => {
+      const okMail = SAFE_EMAIL.test(meta.email);
+      const t = reminderText(meta, st);
+      const needs = st.key !== "current";
+      const s = sent[d.path];
+      return `<tr>
+        <td class="who"><b>${esc(meta.name)}</b><span>${esc(d.path)}</span></td>
+        <td><input type="email" data-cvemail="${esc(d.path)}" value="${esc(meta.email)}" placeholder="name@company.com" aria-label="Owner email for ${esc(meta.name)}">${meta.emailSource ? `<span class="src">${esc(meta.emailSource)}</span>` : ""}</td>
+        <td><input type="date" data-cvdate="${esc(d.path)}" value="${meta.updated ? isoDay(meta.updated) : ""}" max="${isoDay(new Date())}" aria-label="Last updated date for ${esc(meta.name)}">${meta.source ? `<span class="src">${esc(meta.source)}</span>` : `<span class="src">not found, enter it</span>`}</td>
+        <td class="age">${esc(ageText(st.months) || "n/a")}</td>
+        <td><span class="pill ${st.cls}">${esc(st.label)}</span></td>
+        <td><div class="acts">
+          <a class="btn small${needs ? " primary" : ""}" data-remind="${esc(d.path)}" href="${okMail ? esc(mailto(meta.email, t.subject, t.body)) : "#"}" aria-disabled="${okMail ? "false" : "true"}">Email reminder</a>
+          <button class="btn small" type="button" data-copymsg="${esc(d.path)}">Copy message</button>
+        </div>${s ? `<span class="sent">Reminder drafted ${esc(fmtDay(new Date(s)))}</span>` : !okMail ? `<span class="sent">Add an email to send a reminder</span>` : ""}</td>
+      </tr>`;
+    }).join("")}
+  </tbody></table></div>`;
+}
+$("#cvPolicy").addEventListener("change", e => { store.set("bdCvPolicy", Number(e.target.value)); renderCvCheck(); if (S.current) paint("cv"); });
+$("#senderName").addEventListener("change", e => { store.set("bdSender", e.target.value.trim()); renderCvCheck(); });
+$("#cvTable").addEventListener("change", e => {
+  const em = e.target.closest("[data-cvemail]"), dt = e.target.closest("[data-cvdate]");
+  if (!em && !dt) return;
+  const path = (em || dt).dataset[em ? "cvemail" : "cvdate"], all = cvOverrides(), cur = all[path] || {};
+  if (em) { const v = em.value.trim(); if (v && !SAFE_EMAIL.test(v)) { toast("That email address does not look right."); return; } cur.email = v; }
+  if (dt) cur.date = dt.value;
+  all[path] = cur; store.set("bdCvMeta", all);
+  renderCvCheck(); if (S.current) paint("cv");
+});
+$("#cvTable").addEventListener("click", e => {
+  const r = e.target.closest("[data-remind]");
+  if (r) {
+    if (r.getAttribute("aria-disabled") === "true") { e.preventDefault(); toast("Add the owner's email first."); return; }
+    const all = reminders(); all[r.dataset.remind] = Date.now(); store.set("bdReminders", all);
+    toast("Opening your email app. Check the message, then press Send.");
+    setTimeout(renderCvCheck, 300); return;
+  }
+  const c = e.target.closest("[data-copymsg]");
+  if (c) {
+    const d = allDocs().find(x => x.path === c.dataset.copymsg); if (!d) return;
+    const meta = cvMeta(d), t = reminderText(meta, cvStatus(meta));
+    navigator.clipboard.writeText(`Subject: ${t.subject}\n\n${t.body}`).then(() => toast("Message copied. Paste it into Outlook, Teams or WhatsApp."), () => toast("Copy is blocked in this browser."));
+  }
+});
+$("#cvSummary").addEventListener("click", e => { if (e.target.closest("#bulkMail")) toast("Opening your email app with everyone overdue in BCC."); });
+
+/** Finds the CV document behind a skills-match candidate. */
+function docForCandidate(cd) {
+  const cvs = allDocs().filter(d => d.kind === "cv");
+  const f = String(cd.file || ""), base = f.split("/").pop().toLowerCase(), nm = String(cd.name || "").toLowerCase().trim();
+  return cvs.find(d => d.path === f) || (base && cvs.find(d => d.path.toLowerCase().endsWith(base))) || (nm && cvs.find(d => d.title.toLowerCase().includes(nm)));
+}
+function staleTag(cd) {
+  const d = docForCandidate(cd); if (!d) return "";
+  const st = cvStatus(cvMeta(d));
+  if (st.key === "overdue") return `<span class="tagc stale">CV out of date: last updated ${esc(ageText(st.months))} ago</span>`;
+  if (st.key === "due") return `<span class="tagc gap">CV due for update soon (${esc(ageText(st.months))} old)</span>`;
+  if (st.key === "unknown") return `<span class="tagc gap">CV has no update date</span>`;
+  return "";
+}
 
 /* ---------------- shortlist (keyword scan, runs in the browser) ---------------- */
 function shortlist(docs, terms, limit) {
@@ -332,7 +514,7 @@ function viewCv(x, st) {
     ${arr(r.candidates).length ? arr(r.candidates).map(cd => { const m = Math.max(0, Math.min(100, Number(cd.match) || 0)); return `
       <div class="cand"><div class="top"><span class="nm">${esc(cd.name)}</span>${pill(cd.confidence)}<span class="file">${esc(cd.file || "")}</span>
         <div class="meter"><div class="bar"><i style="width:${m}%"></i></div><b>${m}%</b></div></div>
-        <div class="tags">${arr(cd.meets).map(t => `<span class="tagc meets">${esc(t)}</span>`).join("")}${arr(cd.gaps).map(t => `<span class="tagc gap">Gap: ${esc(t)}</span>`).join("")}</div>
+        <div class="tags">${staleTag(cd)}${arr(cd.meets).map(t => `<span class="tagc meets">${esc(t)}</span>`).join("")}${arr(cd.gaps).map(t => `<span class="tagc gap">Gap: ${esc(t)}</span>`).join("")}</div>
         ${cd.summary ? `<p>${esc(cd.summary)}</p>` : ""}</div>`; }).join("") : `<div class="nomatch">No suitable CV found in the folder.</div>`}
     ${r.recommendation ? `<div class="rolerec"><b>Recommendation:</b> ${esc(r.recommendation)}</div>` : ""}</section>`).join("")}</div>`;
 }
@@ -482,9 +664,13 @@ function toMarkdown() {
   const cv = c.steps.cv.data;
   L.push("", "## 2. Skills match from CVs");
   if (cv) arr(cv.roles).forEach(r => {
-    L.push("", `### ${r.role}`, "", "| Consultant | Match | Meets | Gaps | Confidence |", "|---|---|---|---|---|");
-    arr(r.candidates).forEach(cd => L.push(`| ${cd.name} | ${cd.match}% | ${arr(cd.meets).join("; ")} | ${arr(cd.gaps).join("; ") || "None"} | ${cd.confidence} |`));
-    if (!arr(r.candidates).length) L.push("| No suitable CV found | | | | |");
+    L.push("", `### ${r.role}`, "", "| Consultant | Match | Meets | Gaps | Confidence | CV updated |", "|---|---|---|---|---|---|");
+    arr(r.candidates).forEach(cd => {
+      const d = docForCandidate(cd), m = d && cvMeta(d), st = m && cvStatus(m);
+      const cvCol = !st ? "Unknown" : st.key === "unknown" ? "No date" : `${fmtDay(m.updated)} (${st.label})`;
+      L.push(`| ${cd.name} | ${cd.match}% | ${arr(cd.meets).join("; ")} | ${arr(cd.gaps).join("; ") || "None"} | ${cd.confidence} | ${cvCol} |`);
+    });
+    if (!arr(r.candidates).length) L.push("| No suitable CV found | | | | | |");
     if (r.recommendation) L.push("", `Recommendation: ${r.recommendation}`);
   }); else L.push("", c.steps.cv.note || NA);
   const w = c.steps.work.data;

@@ -35,6 +35,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-analyse" aria-selected="true" data-panel="analyse">Analyse tender</button>
       <button class="tab" role="tab" id="tab-repo" aria-selected="false" data-panel="repo">Document folder <span class="n" id="docCount">0</span></button>
+      <button class="tab" role="tab" id="tab-cvs" aria-selected="false" data-panel="cvs">CV check <span class="n due" id="cvDue">0</span></button>
       <button class="tab" role="tab" id="tab-saved" aria-selected="false" data-panel="saved">Saved <span class="n" id="runCount">0</span></button>
       <button class="tab" id="logoutBtn" type="button">Sign out</button>
     </nav>
@@ -120,6 +121,36 @@
         </form>
       </div>
       <div class="box tree" id="tree"></div>
+    </div>
+  </section>
+
+  <!-- CV CHECK -->
+  <section class="panel" id="panel-cvs" hidden>
+    <div class="box cvbox">
+      <div class="cvhead">
+        <div class="t">
+          <p class="eyebrow">CV freshness</p>
+          <h2>Are the CVs up to date?</h2>
+          <p class="note">Tenders score key personnel on current CVs. Each CV should be updated at least once in the period below. The date is read from the CV text (for example "CV last updated: 14 June 2025"). If there is none, the file's saved date is used. You can type a date or email in any row.</p>
+        </div>
+        <div class="cvsettings">
+          <div>
+            <label for="cvPolicy">Update every</label>
+            <select id="cvPolicy">
+              <option value="6">6 months</option>
+              <option value="12" selected>12 months</option>
+              <option value="18">18 months</option>
+              <option value="24">24 months</option>
+            </select>
+          </div>
+          <div>
+            <label for="senderName">Your name (for emails)</label>
+            <input type="text" id="senderName" placeholder="e.g. Merhawi Hailu" autocomplete="name">
+          </div>
+        </div>
+      </div>
+      <div class="cvsummary" id="cvSummary"></div>
+      <div id="cvTable"></div>
     </div>
   </section>
 
