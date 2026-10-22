@@ -783,17 +783,29 @@ function viewInfo(x) {
   ${arr(x.deliverables).length ? `<div class="sec"><h4>Key deliverables</h4><ul class="plain">${arr(x.deliverables).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
   ${arr(x.notStated).length ? `<div class="sec"><h4>Not stated in the tender</h4><ul class="plain">${arr(x.notStated).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}`;
 }
+/** A CV only counts as a match when it meets every stated requirement of the role. */
+const qualifies = cd => cd && (cd.meetsAll === true || (cd.meetsAll == null && !arr(cd.gaps).length));
+const byMatch = (a, b) => (Number(b.match) || 0) - (Number(a.match) || 0);
+const matchingCvs = r => arr(r.candidates).filter(qualifies).sort(byMatch);
+const nearMisses = r => arr(r.candidates).filter(cd => !qualifies(cd)).sort(byMatch);
+function candCard(cd) {
+  const m = Math.max(0, Math.min(100, Number(cd.match) || 0));
+  return `<div class="cand"><div class="top"><span class="nm">${esc(cd.name)}</span>${qualifies(cd) ? `<span class="pill ok">Meets all requirements</span>` : `<span class="pill bad">Does not meet all requirements</span>`}${cd.confidence ? pill(cd.confidence) : ""}${cd.file ? fileChip(cd.file) : ""}
+      <div class="meter"><div class="bar"><i style="width:${m}%"></i></div><b>${m}%</b></div></div>
+    <div class="tags">${staleTag(cd)}${arr(cd.meets).map(t => `<span class="tagc meets">${esc(t)}</span>`).join("")}${arr(cd.gaps).map(t => `<span class="tagc gap">Missing: ${esc(t)}</span>`).join("")}</div>
+    ${cd.summary ? `<p>${esc(cd.summary)}</p>` : ""}</div>`;
+}
 function viewCv(x, st) {
   const roles = arr(x.roles);
   if (!roles.length) return `<p class="waiting">No roles to match.</p>`;
-  return `${st.scanNote ? `<div class="scan">${st.scanNote}</div>` : ""}<div class="roles">${roles.map(r => `
-    <section class="role"><div class="rolehead"><h3>${esc(r.role)}</h3>${r.requirementSummary ? `<p>${esc(r.requirementSummary)}</p>` : ""}</div>
-    ${arr(r.candidates).length ? arr(r.candidates).map(cd => { const m = Math.max(0, Math.min(100, Number(cd.match) || 0)); return `
-      <div class="cand"><div class="top"><span class="nm">${esc(cd.name)}</span>${pill(cd.confidence)}<span class="file">${esc(cd.file || "")}</span>
-        <div class="meter"><div class="bar"><i style="width:${m}%"></i></div><b>${m}%</b></div></div>
-        <div class="tags">${staleTag(cd)}${arr(cd.meets).map(t => `<span class="tagc meets">${esc(t)}</span>`).join("")}${arr(cd.gaps).map(t => `<span class="tagc gap">Gap: ${esc(t)}</span>`).join("")}</div>
-        ${cd.summary ? `<p>${esc(cd.summary)}</p>` : ""}</div>`; }).join("") : `<div class="nomatch">No suitable CV found in the folder.</div>`}
-    ${r.recommendation ? `<div class="rolerec"><b>Recommendation:</b> ${esc(r.recommendation)}</div>` : ""}</section>`).join("")}</div>`;
+  const total = roles.reduce((n, r) => n + matchingCvs(r).length, 0);
+  return `${st.scanNote ? `<div class="scan">${st.scanNote} Only CVs that meet every stated requirement are put forward. ${total} matching CV${total === 1 ? "" : "s"} found.</div>` : ""}<div class="roles">${roles.map(r => {
+    const ok = matchingCvs(r), near = nearMisses(r);
+    return `<section class="role"><div class="rolehead"><h3>${esc(r.role)}</h3>${r.requirementSummary ? `<p>${esc(r.requirementSummary)}</p>` : ""}</div>
+      ${ok.length ? ok.map(candCard).join("") : `<div class="nomatch nomatch-bad"><b>No CV meets all the requirements for this role.</b> Find a consultant who does, or ask the client whether an equivalent is acceptable.</div>`}
+      ${near.length ? `<details class="near"><summary>${near.length === 1 ? "1 closest CV that does not" : near.length + " closest CVs that do not"} meet all requirements (not recommended)</summary>${near.map(candCard).join("")}</details>` : ""}
+      ${r.recommendation ? `<div class="rolerec"><b>Recommendation:</b> ${esc(r.recommendation)}</div>` : ""}</section>`;
+  }).join("")}</div>`;
 }
 function viewWork(x, st) {
   return `${st.scanNote ? `<div class="scan">${st.scanNote}</div>` : ""}<div class="reqs">${arr(x.requirements).map(r => `
@@ -1103,7 +1115,7 @@ function buildPack(c) {
   const deadline = info.submissionDeadlineISO && /^\d{4}-\d{2}-\d{2}/.test(info.submissionDeadlineISO) ? new Date(info.submissionDeadlineISO + "T23:59:59") : null;
   const evPeople = arr(ev.people);
   const personnel = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
-    const cd = arr(r.candidates)[0];
+    const cd = matchingCvs(r)[0];
     if (!cd) return { role: r.role, name: null, cv: null, certs: [] };
     const cvDoc = docForCandidate(cd), meta = cvDoc && cvMeta(cvDoc), st = meta && cvStatus(meta);
     const p = evPeople.find(x => norm(x.role) === norm(r.role)) || evPeople.find(x => norm(x.name) === norm(cd.name));
@@ -1123,7 +1135,7 @@ function buildPack(c) {
   }));
   const linked = new Set(), issues = [];
   personnel.forEach(p => {
-    if (!p.name) { issues.push(`${p.role}: no suitable CV`); return; }
+    if (!p.name) { issues.push(`${p.role}: no CV meets all the requirements`); return; }
     if (p.cv && p.cv.path) linked.add(p.cv.path);
     if (p.cv && p.cv.st && p.cv.st.key === "overdue") issues.push(`${p.name}: CV out of date`);
     p.certs.forEach(ct => {
@@ -1148,7 +1160,7 @@ async function stepEvidence() {
   const c = S.current, st = c.steps.evidence, info = c.steps.info.data;
   if (!info) { st.status = "skipped"; st.note = "Skipped because step 1 did not finish."; paint("evidence"); return; }
   const people = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
-    const cd = arr(r.candidates)[0]; if (!cd) return null;
+    const cd = matchingCvs(r)[0]; if (!cd) return null;
     const req = arr(info.roles).find(x => norm(x.role) === norm(r.role)) || arr(info.roles).find(x => norm(r.role).includes(norm(x.role)) || norm(x.role).includes(norm(r.role)));
     return { role: r.role, name: cd.name, certifications: arr(req && req.certifications) };
   }).filter(Boolean);
@@ -1177,7 +1189,7 @@ function viewEvidence(x, st) {
   const c = S.current, pack = buildPack(c);
   const okIcon = v => pill(v === "Not a document" ? "Action" : v);
   const persons = pack.personnel.map(p => `
-    <section class="evcard"><div class="evhead"><b>${esc(p.role)}</b>${p.name ? `<span>${esc(p.name)}${p.match != null ? ` · ${esc(p.match)}% match` : ""}</span>` : `<span class="pill bad">No suitable CV</span>`}</div>
+    <section class="evcard"><div class="evhead"><b>${esc(p.role)}</b>${p.name ? `<span>${esc(p.name)}${p.match != null ? ` · ${esc(p.match)}% match` : ""}</span>` : `<span class="pill bad">No CV meets all requirements</span>`}</div>
     ${p.name ? `<div class="evrow"><span class="evlabel">CV</span><div class="evfiles">${p.cv && p.cv.path ? fileChip(p.cv.path) : `<span class="pill bad">CV file not found</span>`}${p.cv && p.cv.st ? `<span class="pill ${p.cv.st.cls}">${esc(p.cv.st.key === "unknown" ? "No update date" : `${p.cv.st.label}, ${ageText(p.cv.st.months)} old`)}</span>` : ""}</div></div>` : ""}
     ${p.certs.map(ct => `<div class="evrow"><span class="evlabel">${esc(ct.required)}</span><div class="evfiles">${ct.status === "Found" && ct.file ? fileChip(ct.file) : ""}${ct.status === "Found" ? (ct.expiry ? `<span class="pill ${ct.expiry.cls}">${esc(ct.expiry.label)}</span>` : "") : okIcon(ct.status)}${ct.note && ct.status !== "Found" ? `<span class="evnote">${esc(ct.note)}</span>` : ""}</div></div>`).join("")}
     ${p.name && !p.certs.length ? `<div class="evrow"><span class="evlabel">Certificates</span><div class="evfiles"><span class="evnote">The tender names no certification for this role.</span></div></div>` : ""}
@@ -1324,12 +1336,12 @@ function toMarkdown() {
   L.push("", "## 2. Skills match from CVs");
   if (cv) arr(cv.roles).forEach(r => {
     L.push("", `### ${r.role}`, "", "| Consultant | Match | Meets | Gaps | Confidence | CV updated |", "|---|---|---|---|---|---|");
-    arr(r.candidates).forEach(cd => {
+    matchingCvs(r).forEach(cd => {
       const d = docForCandidate(cd), m = d && cvMeta(d), st = m && cvStatus(m);
       const cvCol = !st ? "Unknown" : st.key === "unknown" ? "No date" : `${fmtDay(m.updated)} (${st.label})`;
       L.push(`| ${cd.name} | ${cd.match}% | ${arr(cd.meets).join("; ")} | ${arr(cd.gaps).join("; ") || "None"} | ${cd.confidence} | ${cvCol} |`);
     });
-    if (!arr(r.candidates).length) L.push("| No suitable CV found | | | | | |");
+    if (!matchingCvs(r).length) L.push("| No CV meets all the requirements | | | | | |");
     if (r.recommendation) L.push("", `Recommendation: ${r.recommendation}`);
   }); else L.push("", c.steps.cv.note || NA);
   const w = c.steps.work.data;

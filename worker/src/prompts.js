@@ -84,12 +84,14 @@ ${clip(tender, Math.floor(maxBytes * 0.9 * sc))}
         const per = Math.max(500, Math.floor((maxBytes * 0.75 * sc) / cvs.length));
         return `Match the consultant CVs below to the roles the tender asks for.
 - A CV may appear under more than one role.
-- Score "match" from 0 to 100 against the role's stated requirements only (qualifications, certifications, years, experience, skills). Missing a stated certification or the minimum years is a clear gap.
-- "meets" and "gaps" are short phrases naming the specific requirement.
+- For each role, check every stated requirement: qualification, certification, minimum years, required experience and required skills.
+- "meetsAll" is true only when the CV clearly shows every stated requirement. When the tender gives options (for example "DP-700 or DP-203", "PMP or PRINCE2"), one of them is enough. If any stated requirement is missing or not shown in the CV, "meetsAll" is false and that requirement goes in "gaps".
+- Score "match" from 0 to 100 against the role's stated requirements only.
+- "meets" and "gaps" are short phrases naming the specific requirement. "gaps" lists only stated requirements the CV does not show, nothing else.
 
 Reply with one JSON object:
-{"roles": [{"role": string, "requirementSummary": string, "candidates": [{"name": string, "file": string (the document path), "match": number, "meets": [string], "gaps": [string], "summary": string (one sentence), "confidence": "High" | "Medium" | "Low"}], "recommendation": string (one sentence naming the best choice, or saying no suitable CV was found)}]}
-Give the top 3 candidates per role, best first. If no CV fits a role at all, return an empty candidates list for it.
+{"roles": [{"role": string, "requirementSummary": string, "candidates": [{"name": string, "file": string (the document path), "meetsAll": true or false, "match": number, "meets": [string], "gaps": [string], "summary": string (one sentence), "confidence": "High" | "Medium" | "Low"}], "recommendation": string (one sentence naming the best CV that meets every requirement, or saying that no CV meets them all and what is missing)}]}
+List every CV that meets all requirements, best first. Then add up to 2 of the closest CVs that do not, with "meetsAll": false. If no CV is relevant to a role, return an empty candidates list for it.
 
 ROLES FROM THE TENDER:
 ${clip(JSON.stringify(roles, null, 1), 20_000)}

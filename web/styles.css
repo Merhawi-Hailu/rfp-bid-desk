@@ -162,7 +162,7 @@ ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: 0
 .rolerec { padding: 10px 14px; font-size: 0.86rem; border-top: 1px dashed var(--line); }
 
 /* Past work */
-.scan { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--sunk); display: grid; gap: 4px; }
+.scan { font-family: var(--f-mono); font-size: 0.78rem; line-height: 1.6; color: var(--muted); padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--sunk); display: block; }
 .scan b { color: var(--ink); }
 .reqs { display: grid; gap: 14px; }
 .req { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
@@ -348,3 +348,9 @@ a.btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 .bidgrid textarea { min-height: 72px; font-family: var(--f-body); resize: vertical; }
 .dlgfoot { display: flex; gap: 8px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); }
 .bidtable td.bidname .ex { display: inline-block; }
+.nomatch-bad { color: var(--bad); background: var(--bad-bg); }
+.nomatch-bad b { display: block; }
+details.near { border-top: 1px dashed var(--line); }
+details.near > summary { padding: 10px 14px; cursor: pointer; font-size: 0.84rem; color: var(--muted); font-weight: 600; }
+details.near .cand { opacity: 0.8; }
+.cand .top .filechip { font-size: 0.7rem; }

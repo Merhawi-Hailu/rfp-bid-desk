@@ -3,7 +3,7 @@
 A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 
 1. **Extracts the key information**: client, closing date, mandatory items, scoring, the roles asked for, and any previous work the client wants to see.
-2. **Matches CVs to roles**: ranks consultants for each role with a match score, what they meet, and their gaps.
+2. **Matches CVs to roles**: only puts forward CVs that meet **every** stated requirement of a role (qualification, certification, minimum years, experience). If no CV fully meets a role, it says so, and the closest CVs are kept in a collapsed "not recommended" section so the gap is visible. The evidence pack uses only fully matching CVs.
 3. **Finds supporting past work**: scans a folder of project reports and reference letters and shows which ones prove each experience requirement.
 4. **Builds the evidence pack**: links the right CV, certificates and proof of similar work to each requirement, checks certificate expiry dates against the closing date, and lists what to fix before submitting.
 5. **Checks CV certifications against the certificates on file**: lists each certification a CV claims, finds the matching certificate file, and flags missing proof, expired certificates, and certificates on file that the CV does not mention. One click drafts an email asking the person for the missing copies.
