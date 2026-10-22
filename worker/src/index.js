@@ -21,6 +21,7 @@
 //   AI                 Cloudflare Workers AI. Needs no API key.
 
 import { SYSTEM, TASKS, parseJson } from "./prompts.js";
+import { listBids, saveBid, deleteBid, clearExamples, STATUSES, REASONS } from "./bids.js";
 
 const MAX_BODY_BYTES = 600_000;
 const enc = new TextEncoder();
@@ -46,10 +47,11 @@ export default {
     try {
       if (url.pathname === "/api/login") return await login(request, env, cors);
       if (url.pathname === "/api/analyze") return await analyze(request, env, cors);
+      if (url.pathname.startsWith("/api/bids/")) return await bids(url.pathname.slice(10), request, env, cors);
       return json({ error: "not_found" }, 404, cors);
     } catch (err) {
       const code = err && err.code ? err.code : "server_error";
-      const status = { bad_request: 400, too_large: 413, unauthorized: 401 }[code] || 500;
+      const status = { bad_request: 400, too_large: 413, unauthorized: 401, tracker_full: 409 }[code] || 500;
       if (status === 500) console.error("server_error", err && err.message);
       return json({ error: code }, status, cors);
     }
@@ -92,6 +94,21 @@ async function analyze(request, env, cors) {
   const result = out.value && typeof out.value === "object" ? out.value : parseJson(out.text);
   if (!result || typeof result !== "object") return json({ error: "invalid_json" }, 502, cors);
   return json({ result, truncated: Boolean(out.truncated), provider }, 200, cors);
+}
+
+/* ---------------- bid tracker ---------------- */
+
+async function bids(action, request, env, cors) {
+  const session = await verifyToken(bearer(request), env.SESSION_SECRET);
+  if (!session) return json({ error: "unauthorized" }, 401, cors);
+  if (!env.BIDS || typeof env.BIDS.get !== "function") return json({ error: "tracker_not_configured" }, 503, cors);
+  if (!(await allow(env.BIDS_LIMITER, "bids:" + session.jti))) return json({ error: "rate_limited" }, 429, cors);
+  const body = await readJson(request, 20_000);
+  if (action === "list") return json({ bids: await listBids(env.BIDS), statuses: STATUSES, reasons: REASONS }, 200, cors);
+  if (action === "save") return json({ bid: await saveBid(env.BIDS, body.bid) }, 200, cors);
+  if (action === "delete") { await deleteBid(env.BIDS, body.id); return json({ ok: true }, 200, cors); }
+  if (action === "clear-examples") return json({ removed: await clearExamples(env.BIDS) }, 200, cors);
+  return json({ error: "not_found" }, 404, cors);
 }
 
 /* ---------------- AI providers ---------------- */

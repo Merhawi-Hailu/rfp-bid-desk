@@ -7,7 +7,8 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 3. **Finds supporting past work**: scans a folder of project reports and reference letters and shows which ones prove each experience requirement.
 4. **Builds the evidence pack**: links the right CV, certificates and proof of similar work to each requirement, checks certificate expiry dates against the closing date, and lists what to fix before submitting.
 5. **Checks CV certifications against the certificates on file**: lists each certification a CV claims, finds the matching certificate file, and flags missing proof, expired certificates, and certificates on file that the CV does not mention. One click drafts an email asking the person for the missing copies.
-6. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
+6. **Tracks every bid to its outcome**: a shared bid tracker records each proposal (added automatically when you analyse a tender), its status (in progress, submitted, won, lost, withdrawn, no-bid), value, client score and feedback. A dashboard shows proposals submitted, won and lost, win rate, value won, why bids were lost, and win rate by sector.
+7. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
 
 It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
 
@@ -114,6 +115,14 @@ cd worker && npm test
 - **Email reminder** opens a draft in your own email app (for example Outlook). Nothing is sent until you press Send.
 - Status rules: **Overdue** at or past the limit, **Due soon** in the last 2 months before it, **Current** otherwise.
 - Settings, typed dates and emails, and the reminder log are kept in your browser.
+
+## Bid tracker
+
+- Shared by everyone who signs in. Stored in Cloudflare Workers KV (free plan), which the GitHub deploy workflow creates the first time it runs.
+- A tender you analyse is added as **In progress** (or linked to an existing bid with the same tender reference). Older bids can be added with **New bid**.
+- Change the status from the table. Moving to **Submitted** fills in the submission date, and **Won** or **Lost** fills in the outcome date and opens the form so you can record the client's feedback and score.
+- The tracker starts with 10 fictional example bids, marked **Example**. Remove them all with one button at the bottom of the list. They do not come back.
+- It holds bid details only (client, dates, status, value, feedback). No CV or tender text is stored.
 
 ## Folder layout
 

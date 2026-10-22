@@ -24,6 +24,19 @@ binding = "AI"
 # Only if AI_PROVIDER = "anthropic":
 #   npx wrangler secret put ANTHROPIC_API_KEY
 
+# Bid tracker storage (Cloudflare Workers KV, free plan).
+# The GitHub deploy workflow creates the namespace and fills in the id.
+# Deploying by hand: run `npx wrangler kv namespace create rfp-bid-desk-bids` and paste the id here.
+[[kv_namespaces]]
+binding = "BIDS"
+id = "__BIDS_KV_ID__"
+
+# Bid tracker reads and saves: 60 per minute per signed in session.
+[[ratelimits]]
+name = "BIDS_LIMITER"
+namespace_id = "1003"
+simple = { limit = 60, period = 60 }
+
 # Login attempts: 5 per minute per IP address.
 [[ratelimits]]
 name = "LOGIN_LIMITER"

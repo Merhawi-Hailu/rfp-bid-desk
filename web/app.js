@@ -99,6 +99,8 @@ function errCopy(code) {
     bad_request: "Something in the request was missing. Check the tender and documents, then try again.",
     invalid_json: "The answer came back in the wrong shape. Run this step again.",
     server_not_configured: "The backend is not set up yet. Ask the app owner to finish the Cloudflare setup.",
+    tracker_not_configured: "The bid tracker storage is not set up yet. Run the backend deploy on GitHub again.",
+    tracker_full: "The bid tracker is full (500 bids). Delete old or example bids first.",
     network: "Could not reach the backend. Check your connection and try again.",
   })[code] || "Something went wrong in this step. Run it again.";
 }
@@ -134,6 +136,7 @@ function showGate(msg) {
   setTimeout(() => $("#pw").focus(), 0);
 }
 function signOut(expired) {
+  if (typeof B !== "undefined") { B.list = []; B.loaded = false; }
   S.token = null; sess.set("bdToken", null); sess.set("bdExp", null);
   S.ctls.forEach(c => c.abort());
   showGate(expired ? "Your sign in has ended. Sign in again." : "");
@@ -159,6 +162,7 @@ document.querySelectorAll(".tab[data-panel]").forEach(b => b.addEventListener("c
 function showTab(n) {
   document.querySelectorAll(".tab[data-panel]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.panel === n)));
   document.querySelectorAll(".panel").forEach(p => (p.hidden = p.id !== "panel-" + n));
+  if (n === "bids") loadBids();
 }
 document.querySelectorAll(".drop").forEach(z => {
   ["dragenter", "dragover"].forEach(e => z.addEventListener(e, () => z.classList.add("over")));
@@ -733,7 +737,7 @@ function renderBoard() {
   $("#board").innerHTML = `
     <div class="box"><div class="boardhead">
       <div class="t"><p class="eyebrow">Tender analysis</p><h2>${esc(c.title)}</h2><div class="sub">${esc(c.rfpName || "Pasted tender")} · ${fmtDate(c.createdAt)} · searched: ${esc(c.sourcesLabel || "")}</div></div>
-      <div class="row"><button class="btn small" id="copyMd" type="button">Copy as text</button><button class="btn small" data-dl="md" type="button">Download .md</button><button class="btn small" data-dl="html" type="button">Download .html</button></div>
+      <div class="row"><button class="btn small" id="openBid" type="button" ${c.bidId ? "" : "hidden"}>Open in bid tracker</button><button class="btn small" id="copyMd" type="button">Copy as text</button><button class="btn small" data-dl="md" type="button">Download .md</button><button class="btn small" data-dl="html" type="button">Download .html</button></div>
     </div></div>
     ${STEPS.map((s, i) => `<article class="box step" id="step-${s.id}"><div class="stephead"><span class="num">${i + 1}</span><h3>${esc(s.title)}</h3><span class="status" data-st></span></div><div class="stepbody" data-body></div></article>`).join("")}`;
   STEPS.forEach(s => paint(s.id));
@@ -820,7 +824,9 @@ async function stepInfo() {
   try {
     const d = await ask("extract", { tender: clip($("#rfpText").value.trim(), 220000), tenderName: S.rfpName || "pasted text" });
     if (!d || typeof d !== "object") throw { code: "invalid_json" };
-    st.data = d; st.status = "done"; return true;
+    st.data = d; st.status = "done";
+    trackFromAnalysis(S.current);
+    return true;
   } catch (e) { fail(st, e); return false; } finally { paint("info"); }
 }
 async function stepCv() {
@@ -860,6 +866,207 @@ async function stepWork() {
     st.scanNote = `Scanned <b>${sl.total}</b> project documents and <b>${letters.length}</b> reference letters. Shortlisted the <b>${picked.length}</b> closest by keyword for a detailed check.${top ? `<br>Top keyword hits:<br>${top}` : ""}${extra}`;
   } catch (e) { fail(st, e); } finally { paint("work"); }
 }
+/* ---------------- bid tracker (shared, stored on the backend) ---------------- */
+const BID_STATUS = [
+  ["in_progress", "In progress"], ["submitted", "Submitted, awaiting outcome"], ["won", "Won"],
+  ["lost", "Lost"], ["withdrawn", "Withdrawn"], ["no_bid", "No-bid"],
+];
+const statusLabel = k => (BID_STATUS.find(x => x[0] === k) || [k, k])[1];
+const BID_FILTERS = [["all", "All"], ["in_progress", "In progress"], ["submitted", "Awaiting outcome"], ["won", "Won"], ["lost", "Lost"], ["other", "Withdrawn or no-bid"]];
+let BID_REASONS = ["Price", "Functionality score below threshold", "Mandatory requirement not met", "B-BBEE / specific goals points", "Experience or references", "Key personnel", "Late or incomplete submission", "Project cancelled by client", "Other"];
+const B = { list: [], loaded: false, loading: null, filter: "all", q: "", editing: null, error: "" };
+const fmtR = n => (n == null ? "" : "R " + Math.round(n).toLocaleString("en-ZA"));
+const fmtRShort = n => (n >= 1e6 ? `R ${(n / 1e6).toFixed(1).replace(/\.0$/, "")}m` : n >= 1e3 ? `R ${Math.round(n / 1e3)}k` : fmtR(n));
+const dayFmt = iso => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "");
+
+async function loadBids(force) {
+  if (!S.token) { B.error = "Sign in to see the shared bid tracker."; renderBids(); return; }
+  if (B.loaded && !force) { renderBids(); return; }
+  if (B.loading) return B.loading;
+  $("#bidTable").innerHTML = `<p class="emptybig">Loading the bid tracker...</p>`;
+  B.loading = (async () => {
+    try {
+      const j = await api("/api/bids/list", {});
+      B.list = arr(j.bids); if (arr(j.reasons).length) BID_REASONS = j.reasons; B.loaded = true; B.error = "";
+    } catch (e) { B.error = errCopy(e && e.code); }
+    B.loading = null; renderBids();
+  })();
+  return B.loading;
+}
+async function saveBidRemote(bid) {
+  const j = await api("/api/bids/save", { bid });
+  const i = B.list.findIndex(b => b.id === j.bid.id);
+  if (i >= 0) B.list[i] = j.bid; else B.list.push(j.bid);
+  renderBids();
+  return j.bid;
+}
+
+/** Each analysed tender is added to the tracker once, as "In progress". */
+async function trackFromAnalysis(c) {
+  if (!c || c.bidId || !S.token) return;
+  const x = c.steps.info.data || {};
+  try {
+    await loadBids();
+    const ref = String(x.reference || "").trim().toLowerCase();
+    const same = ref && !isNA(ref) ? B.list.find(b => (b.reference || "").trim().toLowerCase() === ref) : null;
+    const bid = same || await saveBidRemote({
+      title: !isNA(x.project) && x.project ? x.project : c.title, client: isNA(x.client) ? "" : x.client || "",
+      reference: isNA(x.reference) ? "" : x.reference || "", sector: isNA(x.industry) ? "" : x.industry || "",
+      closingDate: /^\d{4}-\d{2}-\d{2}$/.test(x.submissionDeadlineISO || "") ? x.submissionDeadlineISO : "",
+      status: "in_progress", analysisId: c.id, notes: `Added from the analysis "${c.title}".`,
+    });
+    c.bidId = bid.id; saveRun();
+    const ob = $("#openBid"); if (ob) ob.hidden = false;
+    toast(same ? "Linked to an existing bid in the tracker" : "Added to the bid tracker");
+  } catch { /* the tracker is optional; the analysis still works */ }
+}
+
+function bidStats(list) {
+  const n = k => list.filter(b => b.status === k).length;
+  const won = list.filter(b => b.status === "won"), lost = n("lost"), decided = won.length + lost;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const soon = list.filter(b => b.status === "in_progress" && b.closingDate && (new Date(b.closingDate + "T00:00:00") - today) / DAY <= 14 && new Date(b.closingDate + "T00:00:00") >= today);
+  const reasons = {};
+  list.filter(b => b.status === "lost").forEach(b => { const r = b.reason || "Not recorded"; reasons[r] = (reasons[r] || 0) + 1; });
+  const sectors = {};
+  list.filter(b => b.status === "won" || b.status === "lost").forEach(b => { const s = b.sector || "Not recorded"; (sectors[s] ||= { won: 0, total: 0 }); sectors[s].total++; if (b.status === "won") sectors[s].won++; });
+  return {
+    total: list.length, inProgress: n("in_progress"), awaiting: n("submitted"), won: won.length, lost, decided,
+    submitted: n("submitted") + won.length + lost, other: n("withdrawn") + n("no_bid"),
+    winRate: decided ? Math.round((won.length / decided) * 100) : null,
+    valueWon: won.reduce((t, b) => t + (b.value || 0), 0),
+    valueLost: list.filter(b => b.status === "lost").reduce((t, b) => t + (b.value || 0), 0),
+    soon, reasons, sectors,
+  };
+}
+
+function renderBids() {
+  $("#bidCount").textContent = B.loaded ? B.list.filter(b => b.status === "in_progress" || b.status === "submitted").length : "";
+  if (B.error && !B.loaded) {
+    $("#bidKpis").innerHTML = ""; $("#bidCharts").innerHTML = ""; $("#bidFilter").innerHTML = ""; $("#bidFoot").innerHTML = "";
+    $("#bidTable").innerHTML = `<p class="emptybig">${esc(B.error)}</p>`; return;
+  }
+  if (!B.loaded) return;
+  const st = bidStats(B.list);
+  $("#bidKpis").innerHTML = `
+    <div class="kpi"><dt>Proposals submitted</dt><dd>${st.submitted}</dd><span class="sub">${st.inProgress} more in progress</span></div>
+    <div class="kpi won"><dt>Won</dt><dd>${st.won}</dd><span class="sub">${st.valueWon ? fmtRShort(st.valueWon) + " in contracts" : "No value recorded"}</span></div>
+    <div class="kpi lost"><dt>Lost</dt><dd>${st.lost}</dd><span class="sub">${st.valueLost ? fmtRShort(st.valueLost) + " missed" : "&nbsp;"}</span></div>
+    <div class="kpi"><dt>Win rate</dt><dd>${st.winRate == null ? "n/a" : st.winRate + "%"}</dd><span class="sub">${st.decided ? `${st.won} of ${st.decided} decided bids` : "No outcomes yet"}</span></div>
+    <div class="kpi"><dt>Awaiting outcome</dt><dd>${st.awaiting}</dd><span class="sub">Submitted, no result yet</span></div>
+    <div class="kpi"><dt>Closing in 14 days</dt><dd>${st.soon.length}</dd><span class="sub">${st.soon.length ? esc(st.soon.map(b => b.client || b.title).slice(0, 2).join(", ")) : "Nothing due soon"}</span></div>`;
+
+  const seg = (v, cls) => (v ? `<i class="${cls}" style="flex:${v}" title="${v}"></i>` : "");
+  const reasons = Object.entries(st.reasons).sort((a, b) => b[1] - a[1]), maxR = Math.max(1, ...reasons.map(r => r[1]));
+  const sectors = Object.entries(st.sectors).sort((a, b) => b[1].total - a[1].total).slice(0, 6);
+  $("#bidCharts").innerHTML = `
+    <div class="chart"><h4>All bids by status</h4>
+      <div class="stack" role="img" aria-label="${st.won} won, ${st.lost} lost, ${st.awaiting} awaiting, ${st.inProgress} in progress, ${st.other} withdrawn or no-bid">${seg(st.won, "seg-won")}${seg(st.lost, "seg-lost")}${seg(st.awaiting, "seg-sub")}${seg(st.inProgress, "seg-prog")}${seg(st.other, "seg-other")}</div>
+      <div class="legend"><span style="--sw:var(--ok)">Won ${st.won}</span><span style="--sw:var(--bad)">Lost ${st.lost}</span><span style="--sw:var(--brand-3)">Awaiting ${st.awaiting}</span><span style="--sw:#9db4d3">In progress ${st.inProgress}</span><span style="--sw:#c7d2e0">Withdrawn or no-bid ${st.other}</span></div>
+    </div>
+    <div class="chart"><h4>Why we lost</h4>${reasons.length ? `<ul class="barlist">${reasons.map(([r, v]) => `<li><span class="lbl" title="${esc(r)}">${esc(r)}</span><span class="bar bad"><i style="width:${Math.round((v / maxR) * 100)}%"></i></span><span class="v">${v}</span></li>`).join("")}</ul>` : `<p class="note">No lost bids recorded yet.</p>`}</div>
+    <div class="chart"><h4>Win rate by sector</h4>${sectors.length ? `<ul class="barlist">${sectors.map(([s, v]) => `<li><span class="lbl" title="${esc(s)}">${esc(s)}</span><span class="bar"><i style="width:${Math.round((v.won / v.total) * 100)}%"></i></span><span class="v">${v.won}/${v.total}</span></li>`).join("")}</ul>` : `<p class="note">No decided bids yet.</p>`}</div>`;
+
+  const counts = { all: B.list.length, in_progress: st.inProgress, submitted: st.awaiting, won: st.won, lost: st.lost, other: st.other };
+  $("#bidFilter").innerHTML = BID_FILTERS.map(([k, l]) => `<button class="fchip" type="button" data-bidfilter="${k}" aria-pressed="${B.filter === k}">${esc(l)}<span class="c">${counts[k]}</span></button>`).join("");
+
+  const q = B.q.trim().toLowerCase();
+  const rows = B.list.filter(b => (B.filter === "all" || (B.filter === "other" ? ["withdrawn", "no_bid"].includes(b.status) : b.status === B.filter))
+      && (!q || [b.title, b.client, b.reference, b.sector, b.owner].join(" ").toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const rank = x => ({ in_progress: 0, submitted: 1 })[x.status] ?? 2;
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      if (rank(a) < 2) return (a.closingDate || "9999").localeCompare(b.closingDate || "9999");
+      return (b.outcomeDate || b.updatedAt || "").localeCompare(a.outcomeDate || a.updatedAt || "");
+    });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  $("#bidTable").innerHTML = rows.length ? `<div class="tbl" style="border:0;border-radius:0"><table class="bidtable"><thead><tr><th>Bid</th><th>Closing date</th><th>Status</th><th>Value</th><th>Outcome and feedback</th><th></th></tr></thead><tbody>
+    ${rows.map(b => {
+      const days = b.closingDate ? Math.round((new Date(b.closingDate + "T00:00:00") - today) / DAY) : null;
+      const soon = b.status === "in_progress" && days != null && days >= 0 && days <= 14;
+      const outcome = b.status === "won" ? `<b>Won${b.outcomeDate ? " " + esc(dayFmt(b.outcomeDate)) : ""}${b.score ? ", score " + esc(b.score) : ""}</b>${esc(clip(b.feedback, 140))}`
+        : ["lost", "no_bid", "withdrawn"].includes(b.status) ? `<b>${esc(b.reason || statusLabel(b.status))}${b.score ? ", score " + esc(b.score) : ""}</b>${esc(clip(b.feedback || b.notes, 140))}`
+        : b.status === "submitted" ? `Submitted ${esc(dayFmt(b.submittedDate))}` : "";
+      return `<tr>
+        <td class="bidname"><b>${esc(b.title)}${b.example ? `<span class="ex">Example</span>` : ""}</b><span>${esc([b.client, b.reference].filter(Boolean).join(" · "))}</span></td>
+        <td class="num ${soon ? "soon" : ""}">${b.closingDate ? esc(dayFmt(b.closingDate)) + (soon ? `<br>${days === 0 ? "today" : days + " days left"}` : "") : "Not set"}</td>
+        <td><select class="st-${esc(b.status)}" data-bidstatus="${esc(b.id)}" aria-label="Status of ${esc(b.title)}">${BID_STATUS.map(([k, l]) => `<option value="${k}" ${b.status === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></td>
+        <td class="num">${b.value != null ? esc(fmtR(b.value)) : ""}</td>
+        <td class="outcome">${outcome}</td>
+        <td><button class="btn small" type="button" data-bidedit="${esc(b.id)}">Edit</button></td>
+      </tr>`;
+    }).join("")}</tbody></table></div>`
+    : `<p class="emptybig">${B.list.length ? "No bids match this filter." : "No bids yet. Analyse a tender or press New bid."}</p>`;
+  const ex = B.list.filter(b => b.example).length;
+  $("#bidFoot").innerHTML = `<span>${B.list.length} bids · shared with everyone who signs in</span>${ex ? `<button class="btn small danger" type="button" id="clearExamples">Remove the ${ex} example bids</button>` : ""}`;
+}
+
+function openBidDialog(bid) {
+  B.editing = bid || null;
+  const b = bid || { status: "in_progress" };
+  $("#bidDlgKind").textContent = bid ? (bid.example ? "Example bid" : "Bid") : "New bid";
+  $("#bidDlgTitle").textContent = bid ? bid.title : "Add a bid";
+  $("#bfStatus").innerHTML = BID_STATUS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
+  $("#bfReason").innerHTML = `<option value="">Not recorded</option>` + BID_REASONS.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+  const set = (id, v) => { $(id).value = v == null ? "" : v; };
+  set("#bfTitle", b.title); set("#bfClient", b.client); set("#bfRef", b.reference); set("#bfSector", b.sector); set("#bfOwner", b.owner);
+  set("#bfStatus", b.status); set("#bfValue", b.value != null ? Number(b.value).toLocaleString("en-ZA") : ""); set("#bfClosing", b.closingDate);
+  set("#bfSubmitted", b.submittedDate); set("#bfOutcome", b.outcomeDate); set("#bfScore", b.score); set("#bfReason", b.reason);
+  set("#bfFeedback", b.feedback); set("#bfNotes", b.notes);
+  $("#bidDelete").hidden = !bid; $("#bidDelete").textContent = "Delete"; $("#bidDelete").dataset.confirm = "";
+  syncReasonRow();
+  $("#bidDialog").showModal(); setTimeout(() => $("#bfTitle").focus(), 0);
+}
+function syncReasonRow() { $("#bfReasonRow").hidden = !["lost", "no_bid", "withdrawn"].includes($("#bfStatus").value); }
+$("#bfStatus").addEventListener("change", syncReasonRow);
+$("#bidCancel").addEventListener("click", () => $("#bidDialog").close());
+$("#bidForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const title = $("#bfTitle").value.trim();
+  if (!title) { toast("Add a bid name."); $("#bfTitle").focus(); return; }
+  const v = $("#bfValue").value.replace(/[^0-9.]/g, "");
+  const bid = { ...(B.editing || {}), title, client: $("#bfClient").value, reference: $("#bfRef").value, sector: $("#bfSector").value,
+    owner: $("#bfOwner").value, status: $("#bfStatus").value, value: v ? Number(v) : null, closingDate: $("#bfClosing").value,
+    submittedDate: $("#bfSubmitted").value, outcomeDate: $("#bfOutcome").value, score: $("#bfScore").value,
+    reason: $("#bfReasonRow").hidden ? "" : $("#bfReason").value, feedback: $("#bfFeedback").value, notes: $("#bfNotes").value };
+  const btn = $("#bidSave"); btn.disabled = true; btn.textContent = "Saving...";
+  try { await saveBidRemote(bid); $("#bidDialog").close(); toast("Bid saved"); }
+  catch (err) { toast(errCopy(err && err.code)); }
+  finally { btn.disabled = false; btn.textContent = "Save"; }
+});
+$("#bidDelete").addEventListener("click", async () => {
+  const d = $("#bidDelete"); if (!B.editing) return;
+  if (!d.dataset.confirm) { d.dataset.confirm = "1"; d.textContent = "Confirm delete"; return; }
+  try { await api("/api/bids/delete", { id: B.editing.id }); B.list = B.list.filter(b => b.id !== B.editing.id); $("#bidDialog").close(); renderBids(); toast("Bid deleted"); }
+  catch (err) { toast(errCopy(err && err.code)); }
+});
+$("#newBidBtn").addEventListener("click", () => { if (!S.token) { showGate("Sign in to use the bid tracker."); return; } openBidDialog(null); });
+$("#refreshBidsBtn").addEventListener("click", () => loadBids(true));
+$("#bidSearch").addEventListener("input", e => { B.q = e.target.value; renderBids(); });
+$("#bidFilter").addEventListener("click", e => { const f = e.target.closest("[data-bidfilter]"); if (f) { B.filter = f.dataset.bidfilter; renderBids(); } });
+$("#bidTable").addEventListener("click", e => { const b = e.target.closest("[data-bidedit]"); if (b) openBidDialog(B.list.find(x => x.id === b.dataset.bidedit)); });
+$("#bidTable").addEventListener("change", async e => {
+  const s = e.target.closest("[data-bidstatus]"); if (!s) return;
+  const bid = B.list.find(x => x.id === s.dataset.bidstatus); if (!bid) return;
+  s.disabled = true;
+  try {
+    const saved = await saveBidRemote({ ...bid, status: s.value });
+    toast(`Marked as ${statusLabel(saved.status).toLowerCase()}`);
+    if (["lost", "won"].includes(saved.status) && !saved.feedback) setTimeout(() => openBidDialog(saved), 200);
+  } catch (err) { toast(errCopy(err && err.code)); renderBids(); }
+});
+$("#bidFoot").addEventListener("click", async e => {
+  const c = e.target.closest("#clearExamples"); if (!c) return;
+  if (!c.dataset.confirm) { c.dataset.confirm = "1"; c.textContent = "Confirm: remove all example bids"; return; }
+  try { const j = await api("/api/bids/clear-examples", {}); B.list = B.list.filter(b => !b.example); renderBids(); toast(`Removed ${j.removed} example bids`); }
+  catch (err) { toast(errCopy(err && err.code)); }
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#openBid") || !S.current || !S.current.bidId) return;
+  showTab("bids");
+  loadBids().then(() => { const b = B.list.find(x => x.id === S.current.bidId); if (b) openBidDialog(b); });
+});
+
 /* ---------------- step 4: evidence pack ---------------- */
 const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const baseName = p => String(p || "").split("/").pop();
@@ -1068,7 +1275,7 @@ $("#board").addEventListener("click", e => {
 /* ---------------- saved (this browser only) ---------------- */
 function saveRun() {
   const c = S.current; if (!c || !c.steps.info.data) return;
-  const rec = { id: c.id, title: c.title, rfpName: c.rfpName || "", createdAt: c.createdAt, sourcesLabel: c.sourcesLabel,
+  const rec = { id: c.id, title: c.title, rfpName: c.rfpName || "", createdAt: c.createdAt, sourcesLabel: c.sourcesLabel, bidId: c.bidId || "",
     steps: Object.fromEntries(STEPS.map(s => [s.id, { status: c.steps[s.id].status, note: c.steps[s.id].note || "", scanNote: c.steps[s.id].scanNote || "", data: c.steps[s.id].data || null }])) };
   S.runs = [rec, ...S.runs.filter(r => r.id !== rec.id)].slice(0, 20);
   if (store.set("bdRuns", S.runs)) toast("Saved in this browser"); else toast("Could not save in this browser. Download it to keep a copy.");

@@ -164,6 +164,63 @@ test("certcheck task: reads each person's CV and folder files", async () => {
   assert.equal((await worker.fetch(post("/api/analyze", { task: "certcheck", people: [] }, auth), env)).status, 400);
 });
 
+/** A stand-in for Cloudflare Workers KV. */
+function fakeKv() {
+  const m = new Map();
+  return {
+    m,
+    async get(k, type) { const v = m.has(k) ? m.get(k) : null; return v != null && type === "json" ? JSON.parse(v) : v; },
+    async put(k, v) { m.set(k, v); },
+    async delete(k) { m.delete(k); },
+    async list({ prefix = "" } = {}) { return { keys: [...m.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+  };
+}
+
+test("bid tracker: needs sign in and storage", async () => {
+  const env = baseEnv();
+  assert.equal((await worker.fetch(post("/api/bids/list", {}), env)).status, 401);
+  const auth = await login(env);
+  assert.equal((await worker.fetch(post("/api/bids/list", {}, auth), env)).status, 503);
+});
+
+test("bid tracker: seeds examples once, saves, updates and deletes bids", async () => {
+  const env = baseEnv({ BIDS: fakeKv() });
+  const auth = await login(env);
+  const call = async (path, body) => { const r = await worker.fetch(post("/api/bids/" + path, body, auth), env); return { status: r.status, body: await r.json() }; };
+
+  const first = await call("list", {});
+  assert.equal(first.status, 200);
+  const examples = first.body.bids.filter(b => b.example).length;
+  assert.ok(examples >= 8);
+  assert.equal((await call("list", {})).body.bids.length, examples, "examples are only added once");
+
+  const created = await call("save", { bid: { title: "Test bid", client: "Test client", status: "in_progress", value: "R 1 200 000", closingDate: "2026-12-01" } });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.bid.value, 1200000);
+  assert.equal(created.body.bid.history.length, 1);
+
+  const won = await call("save", { bid: { ...created.body.bid, status: "won" } });
+  assert.equal(won.body.bid.status, "won");
+  assert.match(won.body.bid.submittedDate, /^\d{4}-\d{2}-\d{2}$/, "submitted date filled in");
+  assert.match(won.body.bid.outcomeDate, /^\d{4}-\d{2}-\d{2}$/, "outcome date filled in");
+  assert.equal(won.body.bid.history.length, 2);
+  assert.equal(won.body.bid.createdAt, created.body.bid.createdAt);
+
+  assert.equal((await call("save", { bid: { title: "", status: "won" } })).status, 400, "title required");
+  const odd = await call("save", { bid: { title: "Odd", status: "hacked", reason: "made up", closingDate: "tomorrow", example: true } });
+  assert.equal(odd.body.bid.status, "in_progress");
+  assert.equal(odd.body.bid.reason, "");
+  assert.equal(odd.body.bid.closingDate, "");
+  assert.equal(odd.body.bid.example, false, "browser cannot mark a bid as an example");
+
+  assert.equal((await call("delete", { id: created.body.bid.id })).status, 200);
+  assert.equal((await call("delete", { id: "../../etc" })).status, 400);
+  const removed = await call("clear-examples", {});
+  assert.equal(removed.body.removed, examples);
+  const left = (await call("list", {})).body.bids;
+  assert.equal(left.length, 1, "only the odd bid is left, and examples do not come back");
+});
+
 test("parses JSON wrapped in text", () => {
   assert.deepEqual(parseJson('Here you go: {"a":1} done'), { a: 1 });
   assert.equal(parseJson("no json here"), null);

@@ -17,7 +17,7 @@ This is a stakeholder demo. These controls are in place.
 ## Abuse protection
 
 - **Origin lock.** The backend only answers requests from the web addresses in `ALLOWED_ORIGINS`.
-- **Rate limits.** 5 login attempts per minute per IP address, and 10 analysis calls per minute per session.
+- **Rate limits.** 5 login attempts per minute per IP address, 10 analysis calls and 60 bid tracker calls per minute per session.
 - **Fixed tasks only.** The browser cannot send its own prompt. It sends data for one of five tasks (`extract`, `cv`, `work`, `evidence`, `certcheck`) and the backend builds the prompt. The backend cannot be used as a general chatbot.
 - **Size limits.** Requests over 600 KB are refused. Prompts are capped at 120 KB (free AI) or 250 KB (Claude) and outputs at a fixed number of tokens.
 - **Prompt injection guard.** Tender and document text is wrapped and the model is told to treat it as data, not instructions.
@@ -33,6 +33,7 @@ This is a stakeholder demo. These controls are in place.
 ## Data
 
 - The backend does not store tender or CV content and does not log it. Only short error reasons are logged.
+- The **bid tracker** stores bid details (client, dates, status, value, score, feedback) in Cloudflare Workers KV. Anyone with the demo password can read and change them. Bid fields are cleaned and size-limited on the server, and the tracker is capped at 500 bids.
 - Text sent for analysis is processed by the AI provider (Cloudflare Workers AI by default). Review that provider's terms before using any real data.
 - Use fictional or approved data in the demo.
 

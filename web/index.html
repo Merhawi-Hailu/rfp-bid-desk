@@ -34,6 +34,7 @@
     <div class="brand"><h1>RFP Bid Desk</h1><span class="tag" id="modeTag">Demo data</span></div>
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-analyse" aria-selected="true" data-panel="analyse">Analyse tender</button>
+      <button class="tab" role="tab" id="tab-bids" aria-selected="false" data-panel="bids">Bid tracker <span class="n" id="bidCount">0</span></button>
       <button class="tab" role="tab" id="tab-repo" aria-selected="false" data-panel="repo">Document folder <span class="n" id="docCount">0</span></button>
       <button class="tab" role="tab" id="tab-cvs" aria-selected="false" data-panel="cvs">CV check <span class="n due" id="cvDue">0</span></button>
       <button class="tab" role="tab" id="tab-certs" aria-selected="false" data-panel="certs">Cert check <span class="n due" id="certDue">0</span></button>
@@ -82,6 +83,31 @@
       </aside>
 
       <section class="board" id="board"></section>
+    </div>
+  </section>
+
+  <!-- BID TRACKER -->
+  <section class="panel" id="panel-bids" hidden>
+    <div class="box cvbox">
+      <div class="cvhead">
+        <div class="t">
+          <p class="eyebrow">Bid tracker</p>
+          <h2>Our proposals and how they ended</h2>
+          <p class="note">Shared with everyone who signs in. Each tender you analyse is added here as "In progress". Update the status when you submit, and add the outcome and the client's feedback when it comes back.</p>
+        </div>
+        <div class="cvsettings certactions">
+          <button class="btn primary" type="button" id="newBidBtn">New bid</button>
+          <button class="btn" type="button" id="refreshBidsBtn">Refresh</button>
+        </div>
+      </div>
+      <div class="kpis" id="bidKpis"></div>
+      <div class="bidcharts" id="bidCharts"></div>
+      <div class="bidfilters">
+        <div class="chips" id="bidFilter" role="group" aria-label="Filter by status"></div>
+        <input type="search" id="bidSearch" placeholder="Search client, bid or reference" aria-label="Search bids">
+      </div>
+      <div id="bidTable"></div>
+      <div class="bidfoot" id="bidFoot"></div>
     </div>
   </section>
 
@@ -191,6 +217,37 @@
   </div>
   <pre class="dlgtext" id="dlgText"></pre>
   <div class="row" id="dlgActions"></div>
+</dialog>
+
+<dialog class="docdlg biddlg" id="bidDialog" aria-labelledby="bidDlgTitle">
+  <form id="bidForm" novalidate>
+    <div class="dlghead">
+      <div class="t"><p class="eyebrow" id="bidDlgKind">Bid</p><h2 id="bidDlgTitle">New bid</h2></div>
+      <button class="btn small" type="button" id="bidCancel">Close</button>
+    </div>
+    <div class="bidgrid">
+      <div class="full"><label for="bfTitle">Bid name</label><input type="text" id="bfTitle" required maxlength="200" placeholder="e.g. Data analytics and reporting platform"></div>
+      <div><label for="bfClient">Client</label><input type="text" id="bfClient" maxlength="200"></div>
+      <div><label for="bfRef">Tender reference</label><input type="text" id="bfRef" maxlength="100"></div>
+      <div><label for="bfSector">Sector</label><input type="text" id="bfSector" maxlength="100" list="sectorList" placeholder="e.g. Local government"></div>
+      <div><label for="bfOwner">Bid lead</label><input type="text" id="bfOwner" maxlength="100"></div>
+      <div><label for="bfStatus">Status</label><select id="bfStatus"></select></div>
+      <div><label for="bfValue">Contract value (R)</label><input type="text" id="bfValue" inputmode="numeric" placeholder="e.g. 2 300 000"></div>
+      <div><label for="bfClosing">Closing date</label><input type="date" id="bfClosing"></div>
+      <div><label for="bfSubmitted">Submitted on</label><input type="date" id="bfSubmitted"></div>
+      <div><label for="bfOutcome">Outcome date</label><input type="date" id="bfOutcome"></div>
+      <div><label for="bfScore">Client score</label><input type="text" id="bfScore" maxlength="100" placeholder="e.g. 78 / 100"></div>
+      <div class="full" id="bfReasonRow"><label for="bfReason">Main reason we lost or did not bid</label><select id="bfReason"></select></div>
+      <div class="full"><label for="bfFeedback">Client feedback</label><textarea id="bfFeedback" maxlength="2000" placeholder="What the client said about our proposal"></textarea></div>
+      <div class="full"><label for="bfNotes">Our notes and lessons</label><textarea id="bfNotes" maxlength="2000"></textarea></div>
+    </div>
+    <div class="dlgfoot">
+      <button class="btn danger" type="button" id="bidDelete">Delete</button>
+      <span class="grow"></span>
+      <button class="btn primary" type="submit" id="bidSave">Save</button>
+    </div>
+  </form>
+  <datalist id="sectorList"><option value="Local government"><option value="Provincial government"><option value="National government"><option value="Health"><option value="Education"><option value="Transport"><option value="Utilities"><option value="Financial services"><option value="Private sector"></datalist>
 </dialog>
 
 <div class="toast" id="toast" hidden></div>
