@@ -38,7 +38,7 @@ jobs:
       - name: Stamp file versions so browsers load the latest files
         run: sed -i "s/__BUILD__/${GITHUB_SHA::7}/g" web/index.html
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
