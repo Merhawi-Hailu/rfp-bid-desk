@@ -116,9 +116,9 @@
     <div class="repo">
       <div class="intake">
         <div class="box pad">
-          <p class="eyebrow">Folder from this laptop</p>
+          <p class="eyebrow">Shared drive or folder from this laptop</p>
           <h2>Open a folder</h2>
-          <p class="note">Pick a folder of CVs, project reports and reference letters. Files are read in this browser. Only the text needed for an analysis is sent to the backend, and nothing is stored there. Names with "CV" or "resume" count as CVs, names with "reference" or "letter" count as reference letters, names with "certificate", "CSD", "SBD", "tax" or "B-BBEE" count as certificates, and everything else counts as past work.</p>
+          <p class="note">Pick the shared drive folder, or any folder with CVs, certificates, ID copies, project reports and reference letters. Files are read in this browser. Only the text needed for an analysis is sent to the backend, and nothing is stored there. ID documents are never sent to the AI. Names with "CV" or "resume" count as CVs, names with "ID" or "passport" count as ID documents, names with "reference" or "letter" count as reference letters, names with "certificate", "CSD", "SBD", "tax" or "B-BBEE" count as certificates, and everything else counts as past work.</p>
           <div class="drop" id="folderDrop">
             <input type="file" id="folderInput" webkitdirectory directory multiple>
             <strong>Choose a folder</strong>
@@ -136,6 +136,7 @@
               <option value="project">Past project or case study</option>
               <option value="letter">Reference letter</option>
               <option value="cert">Certificate or compliance document</option>
+              <option value="id">ID document or passport copy</option>
             </select>
           </div>
           <div class="drop" id="addDrop">
@@ -187,9 +188,9 @@
     <div class="box cvbox">
       <div class="cvhead">
         <div class="t">
-          <p class="eyebrow">Certificate proof</p>
-          <h2>Do the CVs match the certificates on file?</h2>
-          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate. When each person has their own folder (for example "Merhawi Hailu" holding their CV and certificates), every file in that folder is treated as theirs. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand.</p>
+          <p class="eyebrow">Certificate and ID proof</p>
+          <h2>Do the CVs match the certificates and ID on file?</h2>
+          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate. It also checks that an ID document is on file, that the name on it matches the CV, and that it has not expired. When each person has their own folder (for example "Merhawi Hailu" holding their CV, certificates and ID copy), every file in that folder is treated as theirs. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand. ID checks run in this browser and ID documents are never sent to the AI.</p>
         </div>
         <div class="cvsettings certactions">
           <button class="btn primary" type="button" id="certAiBtn">Check with AI</button>
@@ -255,6 +256,7 @@
 <script src="config.js?v=__BUILD__"></script>
 <script src="vendor/purify.min.js"></script>
 <script src="demo-data.js?v=__BUILD__"></script>
+<script src="idcheck.js?v=__BUILD__"></script>
 <script src="app.js?v=__BUILD__"></script>
 </body>
 </html>

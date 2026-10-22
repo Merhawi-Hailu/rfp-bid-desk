@@ -10,7 +10,7 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 6. **Tracks every bid to its outcome**: a shared bid tracker records each proposal (added automatically when you analyse a tender), its status (in progress, submitted, won, lost, withdrawn, no-bid), value, client score and feedback. A dashboard shows proposals submitted, won and lost, win rate, value won, why bids were lost, and win rate by sector.
 7. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
 
-It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
+It ships with a **fictional demo shared drive** (6 CVs, 5 ID documents, 8 projects, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data. The demo assumes all CVs, certificates and ID copies sit in one shared drive.
 
 Live site: https://merhawi-hailu.github.io/rfp-bid-desk/
 
@@ -126,27 +126,30 @@ cd worker && npm test
 
 ## Folder layout
 
-The app works best with **one folder per person**, holding their CV and their certificates:
+The demo assumes one shared drive. It works best with **one folder per person**, holding their CV, their certificates and a copy of their ID or passport:
 
 ```
-Consultants/
-  Merhawi Hailu/
-    Merhawi Hailu CV.pdf
-    DP-700 certificate.pdf
-    certs/AZ-900.pdf
-  Thandi Mokoena/
-    ...
-Past Projects/
-Reference Letters/
-Company Compliance/
+Shared drive/
+  Consultants/
+    Merhawi Hailu/
+      Merhawi Hailu CV.pdf
+      ID copy.pdf
+      DP-700 certificate.pdf
+      certs/AZ-900.pdf
+    Thandi Mokoena/
+      ...
+  Past Projects/
+  Reference Letters/
+  Company Compliance/
 ```
 
-A folder that holds exactly one CV is treated as that person's folder. Every other file in it, including subfolders, counts as their certificate, whatever the file is called. The folder name is used as the person's name. Shared folders (for example one "CVs" folder for everyone) also work: certificates are then matched by the holder's name in the file.
+A folder that holds exactly one CV is treated as that person's folder. A file with "ID" or "passport" in its name is treated as an ID document. Every other file in it, including subfolders, counts as their certificate, whatever the file is called. The folder name is used as the person's name. Shared folders (for example one "CVs" folder for everyone) also work: certificates are then matched by the holder's name in the file.
 
 ## Cert check
 
 - **Quick check** (instant, no AI): reads the CV's "Certifications" section, finds the matching certificate file by person and certification code (for PRINCE2 and similar, the level must match), and checks expiry dates. Course attendance certificates are flagged for checking.
 - **Check with AI**: the AI reads each person's CV and every file in their folder. It confirms each listed certification has a real certificate, and catches attendance certificates, wrong levels and name mismatches. It also lists certificates on file that the CV does not mention. Results are kept in your browser until the files change.
+- **ID check**: each person should have an ID or passport copy on file. The check flags a missing ID, a name on the ID that does not match the CV, and an ID that is expired or that expires before the closing date. ID documents are checked in the browser only. They are never sent to the AI.
 - **Link a file** connects a certificate by hand when the match is missed. **Request missing certificates** drafts an email to the person.
 
 ## Limits of this demo

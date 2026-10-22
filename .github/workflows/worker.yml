@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: ["worker/**", ".github/workflows/worker.yml"]
   pull_request:
-    paths: ["worker/**"]
+    paths: ["worker/**", "web/idcheck.js"]
   workflow_dispatch:
 
 permissions:

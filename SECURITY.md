@@ -34,6 +34,7 @@ This is a stakeholder demo. These controls are in place.
 
 - The backend does not store tender or CV content and does not log it. Only short error reasons are logged.
 - The **bid tracker** stores bid details (client, dates, status, value, score, feedback) in Cloudflare Workers KV. Anyone with the demo password can read and change them. Bid fields are cleaned and size-limited on the server, and the tracker is capped at 500 bids.
+- **ID documents are never sent to the AI.** The demo reads ID and passport copies in the browser only, to check the name and expiry date. The demo ID documents are fictional. Real ID documents need a privacy review (for example POPIA) and a data processing agreement before use.
 - Text sent for analysis is processed by the AI provider (Cloudflare Workers AI by default). Review that provider's terms before using any real data.
 - Use fictional or approved data in the demo.
 

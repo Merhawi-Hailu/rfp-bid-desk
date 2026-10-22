@@ -1,6 +1,7 @@
 // Fictional demo data. Every name, client and number here is made up.
 (() => {
-const D = "Demo repository";
+// One shared drive holds everything: a folder per person (CV, certificates, ID copy) plus company folders.
+const D = "Shared drive";
 const DEMO = [
   { kind: "cv", path: `${D}/Consultants/Thandi Mokoena/Thandi Mokoena CV.docx`, title: "Thandi Mokoena CV", text: `CURRICULUM VITAE (fictional demo data)
 Thandi Mokoena, Lead Data Engineer, Demo Consulting
@@ -189,7 +190,31 @@ Forms: SBD 1 (Invitation to bid) and SBD 4 (Bidder's disclosure)
 Bidder: Demo Consulting (Pty) Ltd
 Completed and signed by: Director
 Date signed: 10 October 2026
-Note: SBD 6.1 (Preference points claim form) is not included in this file.` }
+Note: SBD 6.1 (Preference points claim form) is not included in this file.` },
+
+  // ID copies. The numbers are made up and are not in any real ID format.
+  // Michael Botha has no ID on file and Priya Naidoo's passport has expired, so the ID check has something to show.
+  { kind: "id", path: `${D}/Consultants/Thandi Mokoena/ID copy.pdf`, title: "ID copy", text: `CERTIFIED COPY OF IDENTITY DOCUMENT (fictional demo data)
+Full name: Thandi Mokoena
+Document number: DEMO-ID-0101 (not a real number)
+Certified on: 12 January 2026` },
+  { kind: "id", path: `${D}/Consultants/Johan van Wyk/ID copy.pdf`, title: "ID copy", text: `CERTIFIED COPY OF IDENTITY DOCUMENT (fictional demo data)
+Full name: Johan van Wyk
+Document number: DEMO-ID-0102 (not a real number)
+Certified on: 9 February 2026` },
+  { kind: "id", path: `${D}/Consultants/Lerato Nkosi/ID copy.pdf`, title: "ID copy", text: `CERTIFIED COPY OF IDENTITY DOCUMENT (fictional demo data)
+Full name: Lerato Nkosi
+Document number: DEMO-ID-0103 (not a real number)
+Certified on: 20 January 2026` },
+  { kind: "id", path: `${D}/Consultants/Sipho Dlamini/ID copy.pdf`, title: "ID copy", text: `CERTIFIED COPY OF IDENTITY DOCUMENT (fictional demo data)
+Full name: Sipho Dlamini
+Document number: DEMO-ID-0104 (not a real number)
+Certified on: 3 November 2024` },
+  { kind: "id", path: `${D}/Consultants/Priya Naidoo/Passport copy.pdf`, title: "Passport copy", text: `CERTIFIED COPY OF PASSPORT (fictional demo data)
+Full name: Priya Naidoo
+Document number: DEMO-PP-0105 (not a real number)
+Expiry date: 14 March 2026
+Certified on: 15 December 2025` }
 ];
 
 const SAMPLE_RFP = `SAMPLE TENDER (fictional, for demonstration only)
