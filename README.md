@@ -87,7 +87,7 @@ Then **Actions → Deploy web app to GitHub Pages → Run workflow**.
 
 ### 5. Try it
 
-Open the live site, sign in with the demo password, click **Load the sample tender**, then **Analyse RFP**.
+Open the live site, sign in with your email and the demo password (the app greets you by the first name in your email, for example "Hi Merhawi"), click **Load the sample tender**, then **Analyse RFP**.
 
 ### Deploying from a laptop instead
 

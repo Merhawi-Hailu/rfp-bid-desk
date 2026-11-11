@@ -231,7 +231,7 @@ ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: 0
 .gate form { width: min(380px, 100%); padding: 24px; display: flex; flex-direction: column; gap: 14px; }
 .gate h1 { margin: 0; font-family: var(--f-display); font-weight: 700; font-size: 1.6rem; color: var(--brand); }
 .gate .tag { background: var(--brand); color: #fff; align-self: flex-start; }
-.gate input[type="password"] { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+.gate input[type="password"], .gate input[type="email"] { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
 .gate .err { padding: 8px 10px; }
 .who { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); }
 .gate .tag { align-self: flex-start; }
@@ -699,3 +699,8 @@ ul.cell { margin: 0; padding-left: 1em; display: grid; gap: 2px; }
   .penanim .ink { stroke-dashoffset: 0; }
   .penanim .pen { transform: translate(180px, 150px); }
 }
+
+/* Greeting at the top left */
+.hello { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ink); white-space: nowrap; padding-right: 14px; margin-right: 2px; border-right: 1px solid var(--line); }
+.hello .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 0.72rem; display: grid; place-items: center; letter-spacing: 0.02em; }
+@media (max-width: 500px) { .hello { padding-right: 8px; } .hello .avatar { display: none; } }

@@ -184,25 +184,43 @@ async function api(path, body, signal) {
 }
 
 /* ---------------- login ---------------- */
+/** Turns "merhawi.hailu@company.com" into "Merhawi" (first name) and "Merhawi Hailu" (full name). */
+function namesFromEmail(email) {
+  const local = String(email || "").split("@")[0].toLowerCase();
+  const parts = local.split(/[._\-+]+/).map(x => x.replace(/\d+/g, "")).filter(x => x.length > 1);
+  const cap = x => x.charAt(0).toUpperCase() + x.slice(1);
+  return { first: parts.length ? cap(parts[0]) : "", full: parts.slice(0, 3).map(cap).join(" ") };
+}
+function renderHello() {
+  const el = $("#hello"), email = sess.get("bdEmail") || "", n = namesFromEmail(email);
+  el.hidden = !S.token || !email;
+  if (el.hidden) return;
+  const initials = (n.full || email).split(" ").map(w => w.charAt(0)).join("").slice(0, 2).toUpperCase();
+  el.innerHTML = `<span class="avatar" aria-hidden="true">${esc(initials)}</span><span>Hi ${esc(n.first || "there")}</span>`;
+  el.title = email;
+}
 function showGate(msg) {
   $("#gate").hidden = false; const e = $("#loginErr"); e.hidden = !msg; e.textContent = msg || "";
-  setTimeout(() => $("#pw").focus(), 0);
+  setTimeout(() => ($("#email").value ? $("#pw") : $("#email")).focus(), 0);
 }
 function signOut(expired) {
   if (typeof B !== "undefined") { B.list = []; B.loaded = false; }
-  S.token = null; sess.set("bdToken", null); sess.set("bdExp", null);
+  S.token = null; sess.set("bdToken", null); sess.set("bdExp", null); sess.set("bdEmail", null); renderHello();
   S.ctls.forEach(c => c.abort());
   showGate(expired ? "Your sign in has ended. Sign in again." : "");
 }
 $("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const btn = $("#loginBtn"), pw = $("#pw").value;
-  if (!pw) return;
+  const btn = $("#loginBtn"), pw = $("#pw").value, email = $("#email").value.trim();
+  if (!pw || !SAFE_EMAIL.test(email)) { showGate("Enter a valid email address and the password."); return; }
   btn.disabled = true; btn.textContent = "Signing in...";
   try {
     const j = await api("/api/login", { password: pw });
     S.token = j.token; sess.set("bdToken", j.token); sess.set("bdExp", String(j.expiresAt));
-    $("#pw").value = ""; $("#gate").hidden = true; renderSources(); render();
+    sess.set("bdEmail", email); store.set("bdLastEmail", email);
+    const n = namesFromEmail(email);
+    if (n.full && !store.get("bdSender", "")) { store.set("bdSender", n.full); const sn = $("#senderName"); if (sn && !sn.value) sn.value = n.full; }
+    $("#pw").value = ""; $("#gate").hidden = true; renderHello(); renderSources(); render();
   } catch (err) {
     const m = { wrong_password: "That password is not right.", rate_limited: "Too many attempts. Wait a minute, then try again.", server_not_configured: errCopy("server_not_configured"), network: errCopy("network") }[err.code] || "Could not sign in. Try again.";
     showGate(m);
@@ -2230,7 +2248,9 @@ function download(kind) {
 renderTree();
 if (!API) banner("The backend address is not set. Add the API_URL repository variable and redeploy (see the README).");
 const tok = sess.get("bdToken"), exp = Number(sess.get("bdExp") || 0);
+$("#email").value = store.get("bdLastEmail", "") || "";
 if (tok && exp > Date.now()) { S.token = tok; $("#gate").hidden = true; } else showGate("");
+renderHello();
 renderSources();
 const startAt = String(location.hash || "").slice(1);
 go(SCREENS.includes(startAt) && !PROPOSAL.has(startAt) ? startAt : "home");
