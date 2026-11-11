@@ -10,7 +10,31 @@ A demo web app for bid teams. You load a tender (RFP, RFQ or RFI) and it:
 6. **Tracks every bid to its outcome**: a shared bid tracker records each proposal (added automatically when you analyse a tender), its status (in progress, submitted, won, lost, withdrawn, no-bid), value, client score and feedback. A dashboard shows proposals submitted, won and lost, win rate, value won, why bids were lost, and win rate by sector.
 7. **Checks CVs are up to date**: flags CVs not updated in the last 12 months (you can change this) and opens a ready-written reminder email to the CV owner. Out-of-date CVs are also flagged in the skills match.
 
-It ships with a **fictional demo repository** (6 CVs, 8 projects, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
+## The screens
+
+The app has a left navigation that follows how a proposal team works:
+
+| Group | Screen | What it does |
+|---|---|---|
+| | **Home** | Upload a new RFP (PDF, Word or PowerPoint) and open recent proposals with their readiness score. |
+| | **Overview** | The control centre: overall readiness, how many requirements are complete, partial or missing, progress per area, and the gaps the assistant found. |
+| RFP | **RFP analysis** | Client, dates, scoring and deliverables. |
+| RFP | **Requirements** | Every requirement in one list: mandatory items, key personnel, previous work and scored criteria. |
+| RFP | **Compliance matrix** | Each requirement with its proposal section, evidence and status. Filter by Missing, Partial or Complete. Click a row for the recommendation and the proof, link it to a section, or change its status by hand. |
+| Build | **Proposal structure** | An outline you can reorder by dragging. Mark each section as not started, needs attention or done. The AI suggests sections the RFP scores but the outline does not cover yet. The app does not write proposal text. |
+| Evidence | **Team** | Only CVs that meet every requirement of a role. Click the score to see "why this person matched": each requirement with the quote from the CV. |
+| Evidence | **Credentials** | Recommended past projects for this RFP, plus a search across every credential. PowerPoint decks are read slide by slide. |
+| Evidence | **References** | Reference letters on file, which projects they support, and letters still needed. |
+| Evidence | **Documents** | The folder the app searches. Open a folder or add single files. |
+| Review | **Evidence check** | The CV, certificates and proof of similar work for each requirement, with expiry dates. |
+| Review | **Final review** | Readiness score, critical issues, recommended improvements, and **Export proposal pack**. |
+| Workspace | **Bid tracker** and **CV and cert checks** | As before. |
+
+**Evidence first.** Every recommendation links to its source. The evidence viewer shows the file, the page or slide, and the exact text, and says whether that text really is in the file. If the AI's quote cannot be found word for word, the app says so.
+
+**PowerPoint files** are read in the browser. Each slide's text is kept with its slide number, so evidence points to "Slide 4" of a credentials deck. Slides that are only pictures cannot be read.
+
+It ships with a **fictional demo repository** (6 CVs, 8 projects, a PowerPoint credentials deck, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
 
 Live site: https://merhawi-hailu.github.io/rfp-bid-desk/
 
@@ -63,7 +87,7 @@ Then **Actions → Deploy web app to GitHub Pages → Run workflow**.
 
 ### 5. Try it
 
-Open the live site, sign in with the demo password, click **Load the sample tender**, then **Analyse tender**.
+Open the live site, sign in with the demo password, click **Load the sample tender**, then **Analyse RFP**.
 
 ### Deploying from a laptop instead
 
@@ -151,7 +175,7 @@ A folder that holds exactly one CV is treated as that person's folder. Every oth
 
 ## Limits of this demo
 
-- Saved analyses are kept in each person's browser, not on a server.
+- Proposals (analysis, outline, matrix changes) are kept in each person's browser, not on a server. Use Export proposal pack to share one.
 - Folders opened from a laptop are read in the browser. Only the text needed for an analysis is sent to the backend, and the backend does not store it.
 - Scanned PDFs without a text layer cannot be read.
 - The free model is less accurate than Claude on long or messy tenders. If a step comes back in the wrong shape, run it again.

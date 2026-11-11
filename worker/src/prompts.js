@@ -90,7 +90,7 @@ ${clip(tender, Math.floor(maxBytes * 0.9 * sc))}
 - "meets" and "gaps" are short phrases naming the specific requirement. "gaps" lists only stated requirements the CV does not show, nothing else.
 
 Reply with one JSON object:
-{"roles": [{"role": string, "requirementSummary": string, "candidates": [{"name": string, "file": string (the document path), "meetsAll": true or false, "match": number, "meets": [string], "gaps": [string], "summary": string (one sentence), "confidence": "High" | "Medium" | "Low"}], "recommendation": string (one sentence naming the best CV that meets every requirement, or saying that no CV meets them all and what is missing)}]}
+{"roles": [{"role": string, "requirementSummary": string, "candidates": [{"name": string, "file": string (the document path), "meetsAll": true or false, "match": number, "meets": [string], "gaps": [string], "summary": string (one sentence), "confidence": "High" | "Medium" | "Low", "evidence": [{"requirement": string (one stated requirement), "quote": string (a short phrase copied exactly from the CV that proves it, or "" if the CV does not show it)}]}], "recommendation": string (one sentence naming the best CV that meets every requirement, or saying that no CV meets them all and what is missing)}]}
 List every CV that meets all requirements, best first. Then add up to 2 of the closest CVs that do not, with "meetsAll": false. If no CV is relevant to a role, return an empty candidates list for it.
 
 ROLES FROM THE TENDER:
@@ -117,9 +117,10 @@ ${cvs.map(d => docBlock(d, per)).join("\n\n")}`;
 - Check each project against every rule in the requirement (value, age, sector, type of work). Count a reference letter as found only if a letter in the folder clearly matches that project and client.
 - "verdict" is "Met" if enough qualifying projects with the required evidence exist, "Partly met" if some do or evidence is missing, and "Not met" if none do.
 - Only list documents that genuinely help. Order matches from strongest to weakest.
+- If a document has [Slide N] or [Page N] markers, copy "quote" from a single slide or page.
 
 Reply with one JSON object:
-{"requirements": [{"id": string, "requirement": string, "verdict": "Met" | "Partly met" | "Not met", "explanation": string (one or two sentences, say how many qualifying projects were found against how many are needed), "matches": [{"file": string (document path), "project": string, "client": string, "year": string, "value": string, "relevance": "High" | "Medium" | "Low", "why": string (one sentence), "checks": [{"rule": string, "result": "Yes" | "No" | "Unknown"}], "referenceLetter": "Found" | "Not found" | "Not needed", "letterFile": string or null}], "action": string (what the bid team should do to close any gap)}]}
+{"requirements": [{"id": string, "requirement": string, "verdict": "Met" | "Partly met" | "Not met", "explanation": string (one or two sentences, say how many qualifying projects were found against how many are needed), "matches": [{"file": string (document path), "project": string, "client": string, "year": string, "value": string, "relevance": "High" | "Medium" | "Low", "why": string (one sentence), "quote": string (one short sentence copied exactly from the document that proves the match), "checks": [{"rule": string, "result": "Yes" | "No" | "Unknown"}], "referenceLetter": "Found" | "Not found" | "Not needed", "letterFile": string or null}], "action": string (what the bid team should do to close any gap)}]}
 
 REQUIREMENTS FOR PREVIOUS WORK:
 ${clip(JSON.stringify(reqs, null, 1), 15_000)}

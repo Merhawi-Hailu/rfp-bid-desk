@@ -20,7 +20,8 @@ const sess = {
 
 /* ---------------- state ---------------- */
 const S = { token: null, demoOn: true, local: [], localName: "", added: [], runs: store.get("bdRuns", []), rfpName: "", current: null, ctls: [], running: false };
-const allDocs = () => assignOwners([...(S.demoOn ? DEMO.map((d, i) => ({ ...d, id: "demo" + i, src: "demo" })) : []), ...S.local, ...S.added]);
+let docsCache = null;
+const allDocs = () => (docsCache ||= assignOwners([...(S.demoOn ? DEMO.map((d, i) => ({ ...d, id: "demo" + i, src: "demo" })) : []), ...S.local, ...S.added]));
 const GENERIC_DIR = /^(cvs?|resumes?|consultants?|people|staff|team|employees|documents?|certificates?|certs?|demo repository|added documents)$/i;
 const dirOf = p => String(p || "").split("/").slice(0, -1).join("/");
 /** A folder holding exactly one CV is that person's folder: every file under it belongs to them. */
@@ -72,10 +73,62 @@ async function extractText(file) {
     const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
     return { text: r.value.replace(/\n{3,}/g, "\n\n").trim() };
   }
+  if (ext === "pptx") return readPptx(file);
   if (["txt", "md", "csv"].includes(ext)) return { text: await file.text() };
   throw new Error(`"${file.name}" is not a supported type.`);
 }
-const supported = f => /\.(pdf|docx|txt|md|csv)$/i.test(f.name);
+const supported = f => /\.(pdf|docx|pptx|txt|md|csv)$/i.test(f.name);
+
+/* ---------------- PowerPoint (.pptx) reading ----------------
+   A .pptx file is a zip of XML files, one per slide. This reads the zip with the browser's
+   own DecompressionStream, so no extra library is needed. Each slide's text is kept under a
+   [Slide N] marker, so evidence can point to the exact slide. */
+async function unzip(buf) {
+  const dv = new DataView(buf), td = new TextDecoder();
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error("bad_zip");
+  const n = dv.getUint16(eocd + 10, true), files = {};
+  let p = dv.getUint32(eocd + 16, true);
+  for (let k = 0; k < n && p + 46 <= buf.byteLength; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    files[td.decode(new Uint8Array(buf, p + 46, nl))] = { method, csize, off };
+    p += 46 + nl + xl + cl;
+  }
+  return {
+    names: Object.keys(files),
+    async text(name) {
+      const e = files[name]; if (!e) return "";
+      const start = e.off + 30 + dv.getUint16(e.off + 26, true) + dv.getUint16(e.off + 28, true);
+      const data = new Uint8Array(buf, start, e.csize);
+      if (e.method === 0) return td.decode(data);
+      if (e.method !== 8 || typeof DecompressionStream === "undefined") throw new Error("unsupported_zip");
+      return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+    },
+  };
+}
+async function readPptx(file) {
+  let z;
+  try { z = await unzip(await file.arrayBuffer()); } catch { throw new Error(`"${file.name}" could not be opened as a PowerPoint file.`); }
+  const xml = s => new DOMParser().parseFromString(s, "application/xml");
+  let order = z.names.filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => Number(a.match(/(\d+)\.xml$/)[1]) - Number(b.match(/(\d+)\.xml$/)[1]));
+  try {
+    const rels = xml(await z.text("ppt/_rels/presentation.xml.rels")), map = {};
+    [...rels.getElementsByTagName("Relationship")].forEach(r => { map[r.getAttribute("Id")] = "ppt/" + String(r.getAttribute("Target") || "").replace(/^\/?(ppt\/)?/, ""); });
+    const ids = [...xml(await z.text("ppt/presentation.xml")).getElementsByTagName("p:sldId")].map(e => map[e.getAttribute("r:id")]).filter(n => n && z.names.includes(n));
+    if (ids.length) order = ids;
+  } catch { /* fall back to file name order */ }
+  const out = [];
+  for (let i = 0; i < order.length; i++) {
+    const doc = xml(await z.text(order[i]));
+    const paras = [...doc.getElementsByTagName("a:p")].map(p => [...p.getElementsByTagName("a:t")].map(t => t.textContent).join("").replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (paras.length) out.push(`[Slide ${i + 1}]\n${paras.join("\n")}`);
+  }
+  const text = out.join("\n\n");
+  if (text.replace(/\[Slide \d+\]/g, "").trim().length < 20) throw new Error(`"${file.name}" has no text on its slides. Slides that are only pictures cannot be read.`);
+  return { text, pages: order.length, unit: "slides" };
+}
 const fmtN = n => n.toLocaleString("en-ZA");
 const fmtDate = ms => new Date(ms).toLocaleString("en-ZA", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const slug = s => (s || "bid-analysis").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bid-analysis";
@@ -149,25 +202,13 @@ $("#loginForm").addEventListener("submit", async e => {
   try {
     const j = await api("/api/login", { password: pw });
     S.token = j.token; sess.set("bdToken", j.token); sess.set("bdExp", String(j.expiresAt));
-    $("#pw").value = ""; $("#gate").hidden = true; renderSources();
+    $("#pw").value = ""; $("#gate").hidden = true; renderSources(); render();
   } catch (err) {
     const m = { wrong_password: "That password is not right.", rate_limited: "Too many attempts. Wait a minute, then try again.", server_not_configured: errCopy("server_not_configured"), network: errCopy("network") }[err.code] || "Could not sign in. Try again.";
     showGate(m);
   } finally { btn.disabled = false; btn.textContent = "Sign in"; }
 });
 $("#logoutBtn").addEventListener("click", () => signOut(false));
-
-/* ---------------- tabs ---------------- */
-document.querySelectorAll(".tab[data-panel]").forEach(b => b.addEventListener("click", () => showTab(b.dataset.panel)));
-function showTab(n) {
-  document.querySelectorAll(".tab[data-panel]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.panel === n)));
-  document.querySelectorAll(".panel").forEach(p => (p.hidden = p.id !== "panel-" + n));
-  if (n === "bids") loadBids();
-}
-document.querySelectorAll(".drop").forEach(z => {
-  ["dragenter", "dragover"].forEach(e => z.addEventListener(e, () => z.classList.add("over")));
-  ["dragleave", "drop"].forEach(e => z.addEventListener(e, () => z.classList.remove("over")));
-});
 
 /* ---------------- tender intake ---------------- */
 $("#rfpFile").addEventListener("change", async e => {
@@ -177,13 +218,13 @@ $("#rfpFile").addEventListener("change", async e => {
     const { text, pages } = await extractText(f);
     $("#rfpText").value = text; S.rfpName = f.name;
     if (!$("#bidTitle").value.trim()) $("#bidTitle").value = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
-    m.textContent = `${f.name} · ${pages ? pages + " pages · " : ""}${fmtN(text.length)} characters`;
+    m.textContent = `${f.name} · ${pages ? pages + (f.name.toLowerCase().endsWith(".pptx") ? " slides · " : " pages · ") : ""}${fmtN(text.length)} characters`;
   } catch (err) { m.textContent = err.message; }
   e.target.value = ""; renderSources();
 });
 $("#rfpText").addEventListener("input", renderSources);
 $("#loadSample").addEventListener("click", () => {
-  $("#rfpText").value = SAMPLE_RFP; $("#bidTitle").value = "Northvale data analytics platform (sample)"; S.rfpName = "sample-tender.txt";
+  $("#rfpText").value = SAMPLE_RFP; $("#bidTitle").value = "Northvale data analytics platform (sample)"; S.rfpName = "Northvale RFP NMM-ICT-2026-014 (sample).pdf";
   const m = $("#rfpMeta"); m.hidden = false; m.textContent = `Sample tender loaded · ${fmtN(SAMPLE_RFP.length)} characters`;
   if (!S.demoOn) { S.demoOn = true; renderTree(); }
   renderSources(); toast("Sample tender loaded");
@@ -198,9 +239,11 @@ function renderSources() {
     ${S.local.length ? `<li><div class="toggle"><div><b>${esc(S.localName)} (this laptop)</b><span>${cstr(counts(S.local))}</span></div></div></li>` : ""}
     ${S.added.length ? `<li><div class="toggle"><div><b>Added this session</b><span>${cstr(counts(S.added))}</span></div></div></li>` : ""}
     <li><button class="btn link" type="button" id="goRepo">${S.local.length ? "Change folder" : "Open a folder from this laptop"}</button></li>`;
+  $("#srcSummary").textContent = `${sourcesLabel()} (${allDocs().length} documents)`;
   $("#srcDemo").addEventListener("change", e => { S.demoOn = e.target.checked; renderTree(); renderSources(); });
-  $("#goRepo").addEventListener("click", () => showTab("repo"));
+  $("#goRepo").addEventListener("click", () => go("documents"));
   $("#runBtn").disabled = S.running || !S.token || $("#rfpText").value.trim().length < 200;
+  $("#runBtn").title = !S.token ? "Sign in first" : $("#rfpText").value.trim().length < 200 ? "Upload an RFP or load the sample first" : "";
   $("#docCount").textContent = allDocs().length;
   $("#modeTag").hidden = !S.demoOn;
 }
@@ -244,6 +287,7 @@ $("#addForm").addEventListener("submit", async e => {
 });
 let openPrev = null;
 function renderTree() {
+  docsCache = null;
   const docs = allDocs(), box = $("#tree");
   renderCvCheck(); renderCertCheck();
   if (!docs.length) { box.innerHTML = `<header><h2>Document folder</h2></header><p class="emptybig">No documents. Turn on the demo repository on the Analyse tab, open a folder, or add documents.</p>`; return; }
@@ -714,75 +758,41 @@ function shortlist(docs, terms, limit) {
 }
 const forSend = (docs, budget) => { const per = Math.max(1500, Math.floor(budget / Math.max(1, docs.length))); return docs.map(d => ({ path: d.path, text: clip(d.text, per) })); };
 
-/* ---------------- board ---------------- */
+/* ---------------- analysis steps ---------------- */
 const STEPS = [
-  { id: "info", title: "Key information from the tender" },
-  { id: "cv", title: "Skills match from CVs" },
-  { id: "work", title: "Past work that supports the bid" },
-  { id: "evidence", title: "Evidence pack for the submission" },
+  { id: "info", title: "Read the RFP" },
+  { id: "cv", title: "Match CVs to roles" },
+  { id: "work", title: "Find credentials and past work" },
+  { id: "evidence", title: "Link certificates and documents" },
 ];
 const STATUS = { waiting: "Waiting", working: "Working", done: "Done", error: "Failed", stopped: "Stopped", skipped: "Skipped" };
-function renderOutline() {
-  $("#board").innerHTML = `<div class="box outline"><p class="eyebrow">How it works</p><h2>From tender to evidence pack in four steps</h2>
-  <p class="note" style="margin-top:6px">Load a tender, choose where to search, then press Analyse. Anything the documents do not show is marked "${NA}" instead of being guessed.</p>
-  <ol class="flow">
-    <li><b>Extract key information</b><span>Client, deadline, mandatory items, scoring, the roles and the previous work the client asks for.</span></li>
-    <li><b>Match skills from CVs</b><span>Ranks consultants for each role with a match score, what they meet, and their gaps.</span></li>
-    <li><b>Find supporting past work</b><span>Scans the folder for projects and reference letters that prove each experience requirement.</span></li>
-    <li><b>Build the evidence pack</b><span>Links the right CV, certificates and proof of similar work to each requirement, and flags anything missing or expired.</span></li>
-  </ol></div>`;
-}
-function renderBoard() {
-  const c = S.current; if (!c) return renderOutline();
-  $("#board").innerHTML = `
-    <div class="box"><div class="boardhead">
-      <div class="t"><p class="eyebrow">Tender analysis</p><h2>${esc(c.title)}</h2><div class="sub">${esc(c.rfpName || "Pasted tender")} · ${fmtDate(c.createdAt)} · searched: ${esc(c.sourcesLabel || "")}</div></div>
-      <div class="row"><button class="btn small" id="openBid" type="button" ${c.bidId ? "" : "hidden"}>Open in bid tracker</button><button class="btn small" id="copyMd" type="button">Copy as text</button><button class="btn small" data-dl="md" type="button">Download .md</button><button class="btn small" data-dl="html" type="button">Download .html</button></div>
-    </div></div>
-    ${STEPS.map((s, i) => `<article class="box step" id="step-${s.id}"><div class="stephead"><span class="num">${i + 1}</span><h3>${esc(s.title)}</h3><span class="status" data-st></span></div><div class="stepbody" data-body></div></article>`).join("")}`;
-  STEPS.forEach(s => paint(s.id));
-}
-function paint(id) {
-  const c = S.current, el = $("#step-" + id); if (!c || !el) return;
-  const st = c.steps[id];
-  el.querySelector("[data-st]").className = "status st-" + st.status;
-  el.querySelector("[data-st]").innerHTML = `<span class="s"></span>${esc(STATUS[st.status])}`;
-  let html = "";
-  if (st.data) html = ({ info: viewInfo, cv: viewCv, work: viewWork, evidence: viewEvidence })[id](st.data, st);
-  else if (st.status === "working") html = `<p class="waiting">${esc(st.progress || "Working...")}</p>`;
-  else if (st.status === "waiting") html = `<p class="waiting">${id === "evidence" ? "Starts when steps 2 and 3 are done." : "Starts when step 1 is done."}</p>`;
-  else if (st.status === "skipped") html = `<p class="waiting">${esc(st.note || "Skipped.")}</p>`;
-  if (["error", "stopped"].includes(st.status) && !S.running)
-    html += `<div class="err"><span>${esc(st.status === "stopped" ? "You stopped this step." : st.error || errCopy())}</span><button class="btn small" data-rerun="${id}" type="button">Run this step again</button></div>`;
-  el.querySelector("[data-body]").innerHTML = window.DOMPurify.sanitize(html);
-}
+let rq = 0;
+/** Steps call paint() while they run. The screen is redrawn once per frame. */
+function paint() { if (!rq) rq = requestAnimationFrame(() => { rq = 0; render(); }); }
+
 function fact(label, v, extra = "") { return `<div class="fact"><dt>${esc(label)}</dt><dd class="${isNA(v) ? "na" : ""}">${esc(str(v))}${extra}</dd></div>`; }
-function viewInfo(x) {
-  let cd = "";
-  if (x.submissionDeadlineISO && /^\d{4}-\d{2}-\d{2}/.test(x.submissionDeadlineISO)) {
-    const days = Math.ceil((new Date(x.submissionDeadlineISO + "T23:59:59") - new Date()) / 864e5);
-    cd = `<br><span class="countdown ${days < 0 ? "late" : ""}">${days < 0 ? "Closed" : days === 0 ? "Closes today" : `${days} days left`}</span>`;
-  }
+function closingInfo(x) {
+  if (!x || !x.submissionDeadlineISO || !/^\d{4}-\d{2}-\d{2}/.test(x.submissionDeadlineISO)) return null;
+  const days = Math.ceil((new Date(x.submissionDeadlineISO.slice(0, 10) + "T23:59:59") - new Date()) / DAY);
+  return { days, text: days < 0 ? "Closed" : days === 0 ? "Closes today" : `${days} day${days === 1 ? "" : "s"} left` };
+}
+function viewAnalysis(x) {
+  const ci = closingInfo(x);
+  const cd = ci ? `<br><span class="countdown ${ci.days < 0 ? "late" : ""}">${esc(ci.text)}</span>` : "";
   const maxPts = Math.max(1, ...arr(x.evaluation).map(e => Number(e.points) || 0));
   return `
-  ${x.summary ? `<p class="lead">${esc(x.summary)}</p>` : ""}
-  <dl class="facts" style="margin:0">
+  ${x.summary ? `<div class="box pad"><p class="eyebrow">Summary</p><p class="lead">${esc(x.summary)}</p></div>` : ""}
+  <div class="box pad"><p class="eyebrow">Key facts</p><dl class="facts">
     ${fact("Client", x.client)}${fact("Project", x.project)}${fact("Reference", x.reference)}${fact("Industry", x.industry)}
     ${fact("Closing date", x.submissionDeadline, cd)}${fact("Briefing session", x.briefingSession)}${fact("Contract duration", x.contractDuration)}${fact("Submission", x.submissionMethod)}
-  </dl>
-  ${arr(x.mandatory).length ? `<div class="sec"><h4>Mandatory requirements</h4><div class="tbl"><table><thead><tr><th>ID</th><th>Requirement</th><th>Proof needed</th><th>If missed</th></tr></thead><tbody>
-    ${arr(x.mandatory).map(m => `<tr><td class="id">${esc(m.id)}</td><td>${esc(m.requirement)}</td><td>${esc(str(m.evidence))}</td><td>${m.disqualifying ? `<span class="pill bad">Disqualified</span>` : `<span class="pill na">Scored</span>`}</td></tr>`).join("")}
-  </tbody></table></div></div>` : ""}
-  ${arr(x.evaluation).length ? `<div class="sec"><h4>How bids are scored</h4><div class="tbl"><table><thead><tr><th>Stage</th><th>Criterion</th><th>Points</th><th>Detail</th></tr></thead><tbody>
+  </dl></div>
+  ${arr(x.evaluation).length ? `<div class="box pad"><p class="eyebrow">How bids are scored</p><div class="tbl"><table><thead><tr><th>Stage</th><th>Criterion</th><th>Points</th><th>Detail</th></tr></thead><tbody>
     ${arr(x.evaluation).map(e => `<tr><td>${esc(str(e.stage))}</td><td>${esc(e.criterion)}</td><td>${Number(e.points) ? `<div class="wbar"><i style="width:${Math.round(70 * Number(e.points) / maxPts)}px"></i><span>${esc(e.points)}</span></div>` : "<span class='pill na'>n/a</span>"}</td><td>${esc(e.detail || "")}</td></tr>`).join("")}
-  </tbody></table></div>${arr(x.thresholds).length ? `<p class="note" style="margin-top:8px">Thresholds: ${esc(arr(x.thresholds).join("; "))}</p>` : ""}</div>` : ""}
-  ${arr(x.roles).length ? `<div class="sec"><h4>Roles the client asks for</h4><div class="tbl"><table><thead><tr><th>Role</th><th>Qualifications</th><th>Certifications</th><th>Min. years</th><th>Experience</th></tr></thead><tbody>
-    ${arr(x.roles).map(r => `<tr><td><b>${esc(r.role)}</b></td><td>${esc(arr(r.qualifications).join("; ") || NA)}</td><td>${esc(arr(r.certifications).join("; ") || NA)}</td><td>${esc(r.minYears ?? NA)}</td><td>${esc([...arr(r.experience), ...arr(r.skills)].join("; ") || NA)}</td></tr>`).join("")}
-  </tbody></table></div></div>` : ""}
-  <div class="sec"><h4>Previous work the client asks for</h4>${arr(x.experienceRequirements).length ? `<ul class="plain">${arr(x.experienceRequirements).map(r => `<li><b>${esc(r.id)}</b> ${esc(r.requirement)}</li>`).join("")}</ul>` : `<p class="waiting">The tender does not ask for previous work.</p>`}</div>
-  ${arr(x.deliverables).length ? `<div class="sec"><h4>Key deliverables</h4><ul class="plain">${arr(x.deliverables).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
-  ${arr(x.notStated).length ? `<div class="sec"><h4>Not stated in the tender</h4><ul class="plain">${arr(x.notStated).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}`;
+  </tbody></table></div>${arr(x.thresholds).length ? `<p class="note">Thresholds: ${esc(arr(x.thresholds).join("; "))}</p>` : ""}</div>` : ""}
+  ${arr(x.deliverables).length ? `<div class="box pad"><p class="eyebrow">Key deliverables</p><ul class="plain">${arr(x.deliverables).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
+  ${arr(x.notStated).length ? `<div class="box pad"><p class="eyebrow">Not stated in the RFP</p><ul class="plain">${arr(x.notStated).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}`;
 }
+
 /** A CV only counts as a match when it meets every stated requirement of the role. */
 const qualifies = cd => cd && (cd.meetsAll === true || (cd.meetsAll == null && !arr(cd.gaps).length));
 const byMatch = (a, b) => (Number(b.match) || 0) - (Number(a.match) || 0);
@@ -790,38 +800,826 @@ const matchingCvs = r => arr(r.candidates).filter(qualifies).sort(byMatch);
 const nearMisses = r => arr(r.candidates).filter(cd => !qualifies(cd)).sort(byMatch);
 function candCard(cd) {
   const m = Math.max(0, Math.min(100, Number(cd.match) || 0));
-  return `<div class="cand"><div class="top"><span class="nm">${esc(cd.name)}</span>${qualifies(cd) ? `<span class="pill ok">Meets all requirements</span>` : `<span class="pill bad">Does not meet all requirements</span>`}${cd.confidence ? pill(cd.confidence) : ""}${cd.file ? fileChip(cd.file) : ""}
+  return `<div class="cand"><div class="top"><span class="nm">${esc(cd.name)}</span>${qualifies(cd) ? `<span class="pill ok">Meets all requirements</span>` : `<span class="pill bad">Does not meet all requirements</span>`}${cd.file ? fileChip(cd.file) : ""}
       <div class="meter"><div class="bar"><i style="width:${m}%"></i></div><b>${m}%</b></div></div>
     <div class="tags">${staleTag(cd)}${arr(cd.meets).map(t => `<span class="tagc meets">${esc(t)}</span>`).join("")}${arr(cd.gaps).map(t => `<span class="tagc gap">Missing: ${esc(t)}</span>`).join("")}</div>
     ${cd.summary ? `<p>${esc(cd.summary)}</p>` : ""}</div>`;
 }
-function viewCv(x, st) {
-  const roles = arr(x.roles);
-  if (!roles.length) return `<p class="waiting">No roles to match.</p>`;
-  const total = roles.reduce((n, r) => n + matchingCvs(r).length, 0);
-  return `${st.scanNote ? `<div class="scan">${st.scanNote} Only CVs that meet every stated requirement are put forward. ${total} matching CV${total === 1 ? "" : "s"} found.</div>` : ""}<div class="roles">${roles.map(r => {
-    const ok = matchingCvs(r), near = nearMisses(r);
-    return `<section class="role"><div class="rolehead"><h3>${esc(r.role)}</h3>${r.requirementSummary ? `<p>${esc(r.requirementSummary)}</p>` : ""}</div>
-      ${ok.length ? ok.map(candCard).join("") : `<div class="nomatch nomatch-bad"><b>No CV meets all the requirements for this role.</b> Find a consultant who does, or ask the client whether an equivalent is acceptable.</div>`}
-      ${near.length ? `<details class="near"><summary>${near.length === 1 ? "1 closest CV that does not" : near.length + " closest CVs that do not"} meet all requirements (not recommended)</summary>${near.map(candCard).join("")}</details>` : ""}
-      ${r.recommendation ? `<div class="rolerec"><b>Recommendation:</b> ${esc(r.recommendation)}</div>` : ""}</section>`;
-  }).join("")}</div>`;
+
+/* ---------------- evidence: quotes and locations ---------------- */
+const STOP = new Set("the and for with that this from have has are was were will shall must our their your into than then also any all each per its not but can may least more less such other who what which where when how been being about".split(" "));
+const toks = s => [...new Set(norm(s).split(" ").filter(w => w.length > 2 && !STOP.has(w)))];
+/** Splits a document at its [Page N] or [Slide N] markers. */
+function segments(d) {
+  const t = String((d && d.text) || ""), re = /\[(Page|Slide) (\d+)\]/g, out = [];
+  let m, last = 0, label = "";
+  while ((m = re.exec(t))) { out.push({ label, text: t.slice(last, m.index).trim() }); label = `${m[1]} ${m[2]}`; last = re.lastIndex; }
+  out.push({ label, text: t.slice(last).trim() });
+  return out.filter(s => s.text);
 }
-function viewWork(x, st) {
-  return `${st.scanNote ? `<div class="scan">${st.scanNote}</div>` : ""}<div class="reqs">${arr(x.requirements).map(r => `
-    <section class="req"><div class="reqhead"><span class="id">${esc(r.id || "")}</span><div class="txt"><b>${esc(r.requirement)}</b><span>${esc(r.explanation || "")}</span></div>${pill(r.verdict)}</div>
-    ${arr(r.matches).length ? arr(r.matches).map(mm => `
-      <div class="doc"><div class="path">${esc(mm.file)}</div>
-        <div class="meta"><span><b>${esc(str(mm.client))}</b></span><span>${esc(str(mm.year))}</span><span>${esc(str(mm.value))}</span><span>Relevance ${pill(mm.relevance)}</span></div>
-        ${mm.why ? `<p>${esc(mm.why)}</p>` : ""}
-        <div class="checks">${arr(mm.checks).map(ck => `<span class="pill ${pillFor(ck.result)}">${esc(ck.rule)}: ${esc(ck.result)}</span>`).join("")}${mm.referenceLetter && mm.referenceLetter !== "Not needed" ? `<span class="pill ${pillFor(mm.referenceLetter)}">Reference letter: ${esc(mm.referenceLetter)}</span>` : ""}</div>
-        ${mm.letterFile ? `<div class="path">${esc(mm.letterFile)}</div>` : ""}
-      </div>`).join("") : `<div class="nomatch">No supporting documents found in the folder.</div>`}
-    ${r.action ? `<div class="rolerec"><b>Next step:</b> ${esc(r.action)}</div>` : ""}</section>`).join("")}</div>`;
+/** Finds where in a document the proof sits. An AI quote is only "exact" if it really is in the file. */
+function findQuote(d, terms, quote) {
+  const segs = segments(d);
+  if (!segs.length) return { label: "", seg: "", line: "", verified: false };
+  const nq = norm(quote);
+  if (nq.length > 8) {
+    for (const s of segs) {
+      if (!norm(s.text).includes(nq)) continue;
+      const lines = s.text.split("\n"), head = nq.split(" ").slice(0, 4).join(" ");
+      const line = lines.find(l => norm(l).includes(nq)) || lines.find(l => norm(l).includes(head)) || quote;
+      return { label: s.label, seg: s.text, line, quote, verified: true, exact: true };
+    }
+  }
+  const tk = toks(`${terms || ""} ${quote || ""}`);
+  let best = null;
+  segs.forEach(s => s.text.split("\n").forEach(l => {
+    const n = " " + norm(l) + " ", hits = tk.filter(w => n.includes(" " + w)).length;
+    if (hits && (!best || hits > best.hits || (hits === best.hits && l.length < best.line.length))) best = { label: s.label, seg: s.text, line: l.trim(), hits };
+  }));
+  if (!best) return { label: segs[0].label, seg: segs[0].text, line: "", verified: false, aiMiss: nq.length > 8 };
+  return { ...best, verified: true, exact: false, aiMiss: nq.length > 8 };
+}
+const locChip = q => (q && q.label ? `<span class="loc">${esc(q.label)}</span>` : "");
+
+/* ---------------- proposal structure ---------------- */
+const uid = () => Math.random().toString(36).slice(2, 9);
+const SEC_KEYS = { team: /team|personnel|people/i, cred: /credential|experience|reference|case stud/i, comp: /compliance|returnable|mandatory/i, comm: /commercial|pricing|price/i, appr: /approach|method/i, gov: /governance|risk/i, und: /understanding/i, train: /training|skills transfer/i, supp: /support|maintenance/i };
+function secKeyForText(t) {
+  t = String(t || "");
+  if (/price|cost|commercial|financial offer|80\/20|90\/10/i.test(t)) return "comm";
+  if (/b-?bbee|specific goals|preference/i.test(t)) return "comp";
+  if (/personnel|team|staff|\bcvs?\b|key person|qualification/i.test(t)) return "team";
+  if (/experience|reference|credential|similar|track record/i.test(t)) return "cred";
+  if (/training|skills transfer|capacity building/i.test(t)) return "train";
+  if (/governance|risk|quality assurance/i.test(t)) return "gov";
+  return "appr";
+}
+function findSection(c, key, direct) {
+  const s = arr(c.structure).find(x => SEC_KEYS[key] && SEC_KEYS[key].test(x.title));
+  if (s || direct) return s || null;
+  return key === "train" || key === "supp" ? findSection(c, "appr") : null;
+}
+function defaultStructure(info) {
+  const mk = (title, subs = []) => ({ id: "s" + uid(), title, status: "todo", subs });
+  const deliv = arr(info.deliverables).slice(0, 6).map(d => clip(String(d).replace(/\.$/, ""), 80));
+  return [mk("Executive summary"), mk("Understanding the requirement"), mk("Our approach and methodology", ["Mobilise", "Assess", "Design", "Build", "Hand over"]),
+    mk("Deliverables", deliv), mk("Project governance and risk"), mk("Our team"), mk("Credentials and references"),
+    mk("Compliance and returnable documents"), mk("Pricing and commercials"), mk("Appendices")];
+}
+function ensureExtras(c) {
+  if (!c) return;
+  c.overrides ||= {}; c.links ||= {}; c.used ||= []; c.dismissed ||= [];
+  if (!c.structure && c.steps && c.steps.info && c.steps.info.data) c.structure = defaultStructure(c.steps.info.data);
+}
+const secById = (c, id) => arr(c.structure).find(s => s.id === id) || null;
+const secNo = (c, s) => String(arr(c.structure).indexOf(s) + 1).padStart(2, "0");
+/** Covered = a section answers this criterion by name or by topic. */
+function coveredBy(c, text) {
+  const key = secKeyForText(text), k = findSection(c, key, true);
+  if (k) return k;
+  const tk = toks(text).filter(w => !/^(plan|proposed|bidder|provide|company)$/.test(w));
+  return arr(c.structure).find(s => toks(s.title).some(w => tk.includes(w))) || null;
+}
+function suggestions(c) {
+  const info = (c.steps.info && c.steps.info.data) || {}, out = [], dis = new Set(arr(c.dismissed));
+  const add = (title, why) => { const id = "sg:" + norm(title); if (!dis.has(id) && !out.some(o => o.id === id)) out.push({ id, title, why }); };
+  arr(info.evaluation).forEach(e => {
+    const pts = Number(e.points) || 0; if (!pts || secKeyForText(e.criterion) === "comm") return;
+    if (!coveredBy(c, e.criterion)) add(String(e.criterion).replace(/\s*\(.*\)$/, ""), `the RFP scores "${e.criterion}" (${pts} points) and no section answers it yet`);
+  });
+  if (arr(info.deliverables).some(d => /support|maintenance/i.test(d)) && !findSection(c, "supp", true)) add("Support and maintenance", "the RFP asks for support after go-live");
+  if (arr(info.mandatory).length && !findSection(c, "comp", true)) add("Compliance and returnable documents", "the RFP has mandatory documents that must be attached");
+  return out.slice(0, 4);
 }
 
+/* ---------------- compliance matrix ---------------- */
+const ST = { complete: ["ok", "✓", "Complete"], partial: ["warn", "!", "Needs attention"], missing: ["bad", "✕", "Missing"], pending: ["na", "…", "Checking"] };
+const stIcon = s => `<span class="sti ${ST[s][0]}" title="${ST[s][2]}" aria-label="${ST[s][2]}">${ST[s][1]}</span>`;
+const stPill = s => `<span class="pill ${ST[s][0]}">${ST[s][2]}</span>`;
+const pbar = (p, cls = "") => `<div class="pbar ${cls}"><i style="width:${Math.max(0, Math.min(100, Number(p) || 0))}%"></i></div>`;
+const pctCls = p => (p >= 85 ? "ok" : p >= 60 ? "warn" : "bad");
+const busy = st => !st || st.status === "waiting" || st.status === "working";
+const EXPIRED = k => k === "expired" || k === "beforeDeadline";
+
+function matrixRows(c) {
+  const info = c && c.steps.info.data; if (!info) return [];
+  ensureExtras(c);
+  const ev = c.steps.evidence || {}, evDone = !!ev.data, pack = buildPack(c), rows = [];
+  const cvSt = c.steps.cv, wkSt = c.steps.work;
+  arr(info.mandatory).forEach((m, i) => {
+    const pm = pack.mandatory.find(x => x.id === m.id) || pack.mandatory[i];
+    let status = "pending", rec = "", issue = "", evid = [], act = false;
+    if (pm && evDone) {
+      evid = pm.files.map(f => ({ path: f.path, terms: m.evidence || m.requirement, note: f.expiry.key !== "none" ? f.expiry.label : "", cls: f.expiry.cls }));
+      const bad = pm.files.find(f => EXPIRED(f.expiry.key));
+      if (pm.status === "Found") { status = bad ? "partial" : "complete"; rec = bad ? `${baseName(bad.path)} ${lowerFirst(bad.expiry.label)}. Get a current copy.` : pm.note || "The document is on file."; issue = bad ? `${m.id}: document ${lowerFirst(bad.expiry.label)}` : ""; }
+      else if (pm.status === "Not a document") { status = "partial"; act = true; rec = `This is an action, not a document. ${pm.note || ""}`.trim(); issue = `${m.id}: action needed (${clip(m.requirement, 50)})`; }
+      else { status = "missing"; rec = pm.note || `No document in the folder proves this. Find or request: ${m.evidence || m.requirement}`; issue = `${m.id}: ${clip(m.requirement, 60)} is missing`; }
+    } else if (!busy(ev)) { rec = "The document check did not finish. Run it again on the Overview."; }
+    rows.push({ id: "M:" + (m.id || i), ref: m.id || "M" + (i + 1), type: "Mandatory", text: m.requirement, proof: m.evidence, disq: !!m.disqualifying, key: "comp", status, rec, issue, evid, act });
+  });
+  const cvRoles = arr(cvSt.data && cvSt.data.roles);
+  arr(info.roles).forEach((r, i) => {
+    const cr = cvRoles.find(x => norm(x.role) === norm(r.role)) || cvRoles.find(x => norm(x.role).includes(norm(r.role)) || norm(r.role).includes(norm(x.role)));
+    const p = cr && pack.personnel.find(x => x.role === cr.role);
+    const req = [...arr(r.qualifications), ...arr(r.certifications), r.minYears ? `${r.minYears}+ years` : "", ...arr(r.experience)].filter(Boolean).join("; ");
+    let status = "pending", rec = "", issue = "", evid = [];
+    if (cvSt.data) {
+      if (!p || !p.name) { status = "missing"; rec = (cr && cr.recommendation) || "No CV meets every requirement for this role. Find a consultant who does, or ask the client whether an equivalent is acceptable."; issue = `No CV meets all requirements for ${r.role}`; }
+      else {
+        if (p.cv && p.cv.path) evid.push({ path: p.cv.path, terms: req, label: `${p.name} CV`, note: p.cv.st ? (p.cv.st.key === "unknown" ? "No update date" : `CV ${lowerFirst(p.cv.st.label)}`) : "", cls: p.cv.st ? p.cv.st.cls : "na" });
+        const probs = [];
+        if (p.cv && p.cv.st && p.cv.st.key === "overdue") probs.push("the CV is out of date");
+        p.certs.forEach(ct => {
+          if (ct.status === "Found" && ct.file) evid.push({ path: ct.file, terms: ct.required, note: ct.expiry ? ct.expiry.label : "", cls: ct.expiry ? ct.expiry.cls : "ok" });
+          if (ct.status === "Missing") probs.push(`no ${ct.required} certificate on file`);
+          else if (ct.expiry && EXPIRED(ct.expiry.key)) probs.push(`${ct.required} ${lowerFirst(ct.expiry.label)}`);
+        });
+        status = probs.length ? "partial" : "complete";
+        rec = probs.length ? `${p.name} meets the role, but ${probs.join(", ")}. Fix this before you submit.` : `${p.name} meets every stated requirement (${p.match}% match).${evDone ? "" : " Certificates are still being checked."}`;
+        issue = probs.length ? `${p.name} (${r.role}): ${probs[0]}` : "";
+      }
+    } else if (!busy(cvSt)) { status = cvSt.status === "skipped" ? "missing" : "pending"; rec = cvSt.note || "The CV match did not finish. Run it again on the Overview."; issue = status === "missing" ? `${r.role}: ${cvSt.note || "no CVs"}` : ""; }
+    rows.push({ id: "R:" + norm(r.role), ref: "Role " + (i + 1), type: "Team", text: `${r.role}${req ? ": " + req : ""}`, roleName: r.role, key: "team", status, rec, issue, evid });
+  });
+  const wreq = arr(wkSt.data && wkSt.data.requirements);
+  arr(info.experienceRequirements).forEach((e, i) => {
+    const w = wreq.find(x => x.id && x.id === e.id) || wreq[i];
+    let status = "pending", rec = "", issue = "", evid = [];
+    if (w) {
+      status = /^met$/i.test(w.verdict) ? "complete" : /partly/i.test(w.verdict) ? "partial" : "missing";
+      arr(w.matches).forEach(m => {
+        evid.push({ path: m.file, quote: m.quote, terms: m.why || e.requirement, label: m.project, note: m.relevance ? `${m.relevance} relevance` : "", cls: pillFor({ High: "high", Medium: "medium", Low: "low" }[m.relevance] || "") });
+        if (m.letterFile) evid.push({ path: m.letterFile, terms: m.client || m.project, note: "Reference letter", cls: "ok" });
+      });
+      rec = [w.explanation, w.action].filter(Boolean).join(" ");
+      issue = status === "complete" ? "" : `${e.id || "Experience"}: ${status === "missing" ? "no proof of similar work" : "not enough proof of similar work"}`;
+    } else if (!busy(wkSt)) { status = wkSt.status === "skipped" ? "missing" : "pending"; rec = wkSt.note || "The search for past work did not finish. Run it again on the Overview."; issue = status === "missing" ? `${e.id || "Experience"}: no past work found` : ""; }
+    rows.push({ id: "E:" + (e.id || i), ref: e.id || "EXP-" + (i + 1), type: "Experience", text: e.requirement, key: "cred", status, rec, issue, evid });
+  });
+  arr(info.evaluation).forEach((e, i) => {
+    const pts = Number(e.points) || 0; if (!pts) return;
+    const id = "S:" + norm(e.criterion).slice(0, 40), key = secKeyForText(e.criterion);
+    const sec = c.links[id] === "none" ? null : (c.links[id] && secById(c, c.links[id])) || coveredBy(c, e.criterion) || findSection(c, key);
+    const status = !sec ? "missing" : sec.status === "done" ? "complete" : "partial";
+    const rec = !sec ? `Add a section that answers "${e.criterion}". It is worth ${pts} points.` : status === "complete" ? `Answered in "${sec.title}".` : `Answer this in "${sec.title}". It is worth ${pts} points. Mark the section as done on Proposal structure when it is written.`;
+    rows.push({ id, ref: `${pts} pts`, type: "Scored", text: e.criterion, proof: e.detail, points: pts, key, status, rec, sectionId: sec ? sec.id : "", issue: !sec ? `No section answers "${clip(e.criterion, 50)}" (${pts} points)` : status === "partial" ? `"${clip(sec.title, 40)}" not written yet (${pts} points)` : "", evid: [] });
+  });
+  rows.forEach(r => {
+    if (c.links[r.id] === "none") r.sectionId = "";
+    else if (!r.sectionId) { const s = (c.links[r.id] && secById(c, c.links[r.id])) || findSection(c, r.key); r.sectionId = s ? s.id : ""; }
+    else if (c.links[r.id] && secById(c, c.links[r.id])) r.sectionId = c.links[r.id];
+    const o = c.overrides[r.id];
+    if (o && ST[o]) { r.auto = r.status; r.status = o; r.overridden = true; if (o === "complete") r.issue = ""; else if (!r.issue) r.issue = `${r.ref}: marked "${ST[o][2].toLowerCase()}"`; }
+  });
+  return rows;
+}
+
+function readiness(c) {
+  const info = c && c.steps.info.data, rows = matrixRows(c);
+  const sc = s => (s === "complete" ? 1 : s === "partial" ? 0.5 : 0);
+  const pct = list => { const l = list.filter(r => r.status !== "pending"); return l.length ? Math.round(100 * l.reduce((n, r) => n + sc(r.status), 0) / l.length) : null; };
+  const st = arr(c && c.structure);
+  const proposal = st.length ? Math.round(100 * st.reduce((n, s) => n + (s.status === "done" ? 1 : s.status === "attention" ? 0.5 : 0), 0) / st.length) : null;
+  let evidence = null;
+  if (c && c.steps.evidence && c.steps.evidence.data) {
+    const pack = buildPack(c), items = [];
+    pack.personnel.forEach(p => {
+      if (!p.name) return;
+      items.push(p.cv && p.cv.st && p.cv.st.key === "overdue" ? 0.5 : 1);
+      p.certs.forEach(ct => { if (ct.status === "Found") items.push(ct.expiry && EXPIRED(ct.expiry.key) ? 0.5 : 1); else if (ct.status === "Missing") items.push(0); });
+    });
+    pack.mandatory.forEach(m => { if (m.status === "Found") items.push(m.files.some(f => EXPIRED(f.expiry.key)) ? 0.5 : 1); else if (m.status === "Missing") items.push(0); });
+    pack.experience.forEach(e => e.items.forEach(i => { if (i.letter === "Found") items.push(1); else if (i.letter === "Not found") items.push(0); }));
+    evidence = items.length ? Math.round(100 * items.reduce((a, b) => a + b, 0) / items.length) : 100;
+  }
+  const A = { rfp: info ? 100 : null, compliance: pct(rows), proposal: info ? proposal : null, team: pct(rows.filter(r => r.type === "Team")), credentials: pct(rows.filter(r => r.type === "Experience")), evidence };
+  const W = { rfp: 1, compliance: 3, proposal: 2, team: 2, credentials: 2, evidence: 2 };
+  let n = 0, d = 0;
+  Object.keys(W).forEach(k => { if (A[k] != null) { n += W[k] * A[k]; d += W[k]; } });
+  A.overall = d ? Math.round(n / d) : 0;
+  A.label = !info ? "Not analysed" : A.overall >= 85 ? "Ready" : A.overall >= 60 ? "Nearly ready" : "Not ready";
+  A.rows = rows;
+  return A;
+}
+
+/** Critical issues stop a bid. Improvements make it stronger. */
+function gaps(c, rows = matrixRows(c)) {
+  const crit = [], impr = [];
+  rows.forEach(r => {
+    if (!r.issue || r.status === "complete" || r.status === "pending") return;
+    const item = { text: r.issue, rowId: r.id };
+    if (r.status === "missing" && r.type !== "Scored") crit.push(item);
+    else if (r.type === "Mandatory" && r.disq && r.status === "partial" && /expired|before the closing/i.test(r.issue)) crit.push(item);
+    else impr.push(item);
+  });
+  arr(c.structure).forEach(s => { if (s.status === "attention") impr.push({ text: `"${s.title}" needs attention`, go: "structure" }); });
+  suggestions(c).forEach(s => impr.push({ text: `Suggested section: ${s.title}`, go: "structure" }));
+  return { crit, impr };
+}
+
+/* ---------------- navigation ---------------- */
+const SCREENS = ["home", "overview", "analysis", "requirements", "matrix", "structure", "team", "credentials", "references", "documents", "evidence", "review", "bids", "checks"];
+const PROPOSAL = new Set(["overview", "analysis", "requirements", "matrix", "structure", "team", "credentials", "references", "evidence", "review"]);
+const TITLES = { home: "Home", overview: "Overview", analysis: "RFP analysis", requirements: "Requirements", matrix: "Compliance matrix", structure: "Proposal structure", team: "Team", credentials: "Credentials", references: "References", documents: "Documents", evidence: "Evidence check", review: "Final review", bids: "Bid tracker", checks: "CV and cert checks" };
+const GROUP = { analysis: "RFP", requirements: "RFP", matrix: "RFP", structure: "Build", team: "Evidence", credentials: "Evidence", references: "Evidence", documents: "Evidence", evidence: "Review", review: "Review", bids: "Workspace", checks: "Workspace" };
+const ICONS = {
+  home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/>',
+  list: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14c2.2.6 3.5 2.8 3.5 6"/>',
+  award: '<circle cx="12" cy="9" r="6"/><path d="M8.5 14l-1.5 7 5-3 5 3-1.5-7"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  folder: '<path d="M3 6.5A1.5 1.5 0 014.5 5H9l2 2.5h8.5A1.5 1.5 0 0121 9v9.5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/>',
+  check: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="11" r="2.2"/><path d="M5 16.5c.6-1.6 2-2.4 3.5-2.4s2.9.8 3.5 2.4M14.5 10h4.5M14.5 13.5h3"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+};
+const ico = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+document.querySelectorAll("i[data-ico]").forEach(i => { i.innerHTML = ico(i.dataset.ico); });
+
+let screen = "home";
+function go(n, keepScroll) {
+  if (!SCREENS.includes(n)) n = "home";
+  screen = n; closeDrawer();
+  document.querySelectorAll(".screen").forEach(s => (s.hidden = s.id !== "scr-" + n));
+  document.querySelectorAll(".navi").forEach(b => { b.classList.toggle("on", b.dataset.go === n); if (b.dataset.go === n) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  if (n === "bids") loadBids();
+  $("#side").classList.remove("open"); $("#menuBtn").setAttribute("aria-expanded", "false");
+  try { history.replaceState(null, "", "#" + n); } catch { /* ignore */ }
+  render();
+  if (!keepScroll) window.scrollTo(0, 0);
+}
+/** Older code paths still ask for the old tab names. */
+function showTab(n) {
+  go({ analyse: "home", repo: "documents", cvs: "checks", certs: "checks", saved: "home" }[n] || n);
+  if (n === "cvs" || n === "certs") setCheck(n);
+}
+function setCheck(k) {
+  document.querySelectorAll(".segb").forEach(b => b.setAttribute("aria-selected", String(b.dataset.check === k)));
+  $("#check-cvs").hidden = k !== "cvs"; $("#check-certs").hidden = k !== "certs";
+}
+document.querySelectorAll(".segb").forEach(b => b.addEventListener("click", () => setCheck(b.dataset.check)));
+$("#nav").addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) go(b.dataset.go); });
+$("#menuBtn").addEventListener("click", () => { const o = $("#side").classList.toggle("open"); $("#menuBtn").setAttribute("aria-expanded", String(o)); });
+$("#newPropBtn").addEventListener("click", () => {
+  if (S.running) { toast("Wait for the current analysis to finish, or press Stop."); return; }
+  S.current = null; S.rfpName = ""; $("#rfpText").value = ""; $("#bidTitle").value = ""; $("#rfpMeta").hidden = true;
+  go("home"); renderSources(); setTimeout(() => $("#rfpFile").focus(), 0);
+});
+document.querySelectorAll(".drop").forEach(z => {
+  ["dragenter", "dragover"].forEach(e => z.addEventListener(e, () => z.classList.add("over")));
+  ["dragleave", "drop"].forEach(e => z.addEventListener(e, () => z.classList.remove("over")));
+});
+
+function render() {
+  refreshNav(); renderTop(); renderAssist();
+  if (screen === "home") renderRecent();
+  if (PROPOSAL.has(screen)) renderScreen(screen);
+}
+function refreshNav() {
+  const c = S.current, R = c && c.steps.info.data ? readiness(c) : null, rows = R ? R.rows : [];
+  document.querySelectorAll(".navi").forEach(b => b.classList.toggle("dim", PROPOSAL.has(b.dataset.go) && !c));
+  $("#navReq").textContent = rows.length || "";
+  const miss = rows.filter(r => r.status === "missing").length;
+  $("#navMiss").textContent = miss || ""; $("#navMiss").classList.toggle("zero", !miss);
+  const due = (Number($("#cvDue").textContent) || 0) + (Number($("#certDue").textContent) || 0);
+  $("#checkDue").textContent = due || ""; $("#checkDue").classList.toggle("zero", !due);
+  const cp = $("#curProp");
+  cp.hidden = !c;
+  if (c) cp.innerHTML = `<button type="button" data-go="overview"><span class="lbl">Open proposal</span><b>${esc(c.title)}</b>${R ? `<span class="mini">${pbar(R.overall, pctCls(R.overall))}<em>${R.overall}%</em></span>` : `<span class="mini"><em>${S.running ? "Analysing..." : "Not analysed"}</em></span>`}</button>`;
+}
+$("#curProp").addEventListener("click", e => { if (e.target.closest("[data-go]")) go("overview"); });
+function renderTop() {
+  const c = S.current;
+  const crumb = GROUP[screen] ? `<span class="grp">${esc(GROUP[screen])}</span><span class="sep">/</span>` : "";
+  $("#crumbs").innerHTML = `${crumb}<b>${esc(TITLES[screen] || "")}</b>${c && PROPOSAL.has(screen) ? `<span class="prop">${esc(c.title)}</span>` : ""}`;
+  const rs = $("#runState");
+  if (S.running && c) {
+    const i = STEPS.findIndex(s => c.steps[s.id] && c.steps[s.id].status === "working");
+    rs.hidden = false; rs.innerHTML = `<span class="spin" aria-hidden="true"></span>Analysing${i >= 0 ? ` · step ${i + 1} of ${STEPS.length}: ${esc(STEPS[i].title.toLowerCase())}` : ""}`;
+  } else rs.hidden = true;
+}
+
+/* ---------------- assistant ---------------- */
+let assistOpen = false;
+function renderAssist() {
+  const box = $("#assist"), c = S.current;
+  const show = c && c.steps.info.data && PROPOSAL.has(screen) && screen !== "overview" && screen !== "review";
+  box.hidden = !show; if (!show) return;
+  const g = gaps(c), all = [...g.crit.map(x => ({ ...x, sev: "bad" })), ...g.impr.map(x => ({ ...x, sev: "warn" }))];
+  if (!assistOpen) { box.innerHTML = `<button type="button" class="assistpill" data-assist="open">${ico("spark")}Proposal assistant${all.length ? `<span class="n">${all.length}</span>` : ""}</button>`; return; }
+  box.innerHTML = window.DOMPurify.sanitize(`<div class="assistcard"><div class="ah">${ico("spark")}<b>Proposal assistant</b><button type="button" class="x" data-assist="close" aria-label="Close">×</button></div>
+    ${all.length ? `<p>I found ${all.length === 1 ? "one gap" : `${all.length} gaps`}${all.length > 3 ? ". The first three:" : ":"}</p><ul>${all.slice(0, 3).map(x => `<li class="${x.sev}"><button type="button" ${x.rowId ? `data-row="${esc(x.rowId)}"` : `data-go2="${esc(x.go || "matrix")}"`}>${esc(x.text)}</button></li>`).join("")}</ul>
+    <button type="button" class="btn small primary" data-go2="matrix" data-filter="${g.crit.length ? "missing" : "partial"}">Review gaps</button>` : `<p>No gaps found. Run the final review before you submit.</p><button type="button" class="btn small primary" data-go2="review">Final review</button>`}</div>`);
+}
+$("#assist").addEventListener("click", e => {
+  const a = e.target.closest("[data-assist]"); if (a) { assistOpen = a.dataset.assist === "open"; renderAssist(); return; }
+  handleJump(e);
+});
+/** Shared by the assistant, overview and review lists. */
+function handleJump(e) {
+  const r = e.target.closest("[data-row]"); if (r) { openRowPanel(r.dataset.row); return true; }
+  const g = e.target.closest("[data-go2]"); if (g) { if (g.dataset.filter) MX.filter = g.dataset.filter; go(g.dataset.go2); return true; }
+  return false;
+}
+
+/* ---------------- home ---------------- */
+let pendingRun = null;
+function hydrate(r) {
+  return { ...r, docs: null, steps: Object.fromEntries(STEPS.map(s => [s.id, { ...(r.steps[s.id] || { status: "skipped", note: "This analysis was saved before this step existed. Run it again to add it." }) }])) };
+}
+function renderRecent() {
+  const box = $("#recentList");
+  if (!S.runs.length) { box.innerHTML = `<div class="box empty">No proposals yet. Upload an RFP above, or load the sample tender to try it.</div>`; return; }
+  box.innerHTML = window.DOMPurify.sanitize(`<div class="box recentbox">${S.runs.map(r => {
+    const c = S.current && S.current.id === r.id ? S.current : hydrate(r), R = readiness(c), x = r.steps.info && r.steps.info.data || {}, ci = closingInfo(x);
+    return `<div class="rp ${S.current && S.current.id === r.id ? "cur" : ""}"><button type="button" class="rpmain" data-open="${esc(r.id)}"><b>${esc(r.title)}</b><span>${esc([isNA(x.client) ? "" : x.client, ci ? ci.text : "", fmtDate(r.createdAt)].filter(Boolean).join(" · "))}</span></button>
+      <div class="rpready"><div class="rpp"><b class="${pctCls(R.overall)}">${R.overall}%</b> ${esc(R.label === "Ready" ? "Ready" : "ready")}</div>${pbar(R.overall, pctCls(R.overall))}</div>
+      <button class="btn small ${pendingRun === r.id ? "danger" : "ghost"}" data-rdel="${esc(r.id)}" type="button" aria-label="Delete ${esc(r.title)}">${pendingRun === r.id ? "Confirm delete" : "Delete"}</button></div>`;
+  }).join("")}</div><p class="note">Proposals are saved in this browser. Use Export on Final review to share one.</p>`);
+}
+$("#recentList").addEventListener("click", e => {
+  const o = e.target.closest("[data-open]");
+  if (o) {
+    if (S.running) { toast("Wait for the current analysis to finish."); return; }
+    const r = S.runs.find(x => x.id === o.dataset.open); if (!r) return;
+    S.current = S.current && S.current.id === r.id ? S.current : hydrate(r); ensureExtras(S.current); go("overview"); return;
+  }
+  const d = e.target.closest("[data-rdel]");
+  if (d) {
+    const id = d.dataset.rdel;
+    if (pendingRun !== id) { pendingRun = id; renderRecent(); return; }
+    pendingRun = null; S.runs = S.runs.filter(r => r.id !== id); store.set("bdRuns", S.runs);
+    if (S.current && S.current.id === id && !S.running) S.current = null;
+    render(); toast("Deleted");
+  }
+});
+
+/* ---------------- proposal screens ---------------- */
+const head = (eyebrow, title, note, actions = "") => `<div class="pagehead"><div><p class="eyebrow">${esc(eyebrow)}</p><h1>${esc(title)}</h1>${note ? `<p class="note">${note}</p>` : ""}</div>${actions ? `<div class="row">${actions}</div>` : ""}</div>`;
+function stepWait(c, id, what) {
+  const st = c.steps[id] || { status: "waiting" };
+  const msg = st.status === "working" ? st.progress || "Working..." : st.status === "waiting" ? `This fills in when the "${STEPS.find(s => s.id === id).title.toLowerCase()}" step runs.` : st.status === "skipped" ? st.note || "Skipped." : st.error || "This step did not finish.";
+  return `<div class="box empty ${st.status === "working" ? "working" : ""}">${st.status === "working" ? `<span class="spin" aria-hidden="true"></span>` : ""}<p>${esc(msg)}</p>${["error", "stopped"].includes(st.status) && !S.running ? `<button class="btn small" data-rerun="${id}" type="button">Run this step again</button>` : ""}${what ? `<p class="note">${esc(what)}</p>` : ""}</div>`;
+}
+function renderScreen(n) {
+  const el = $("#scr-" + n), c = S.current;
+  let html;
+  if (!c) html = `${head(GROUP[n] || "Proposal", TITLES[n])}<div class="box empty"><p>No proposal is open.</p><p class="note">Upload an RFP on the Home screen, or open a recent proposal.</p><button class="btn primary" type="button" data-go2="home">Go to Home</button></div>`;
+  else { ensureExtras(c); html = ({ overview: scrOverview, analysis: scrAnalysis, requirements: scrRequirements, matrix: scrMatrix, structure: scrStructure, team: scrTeam, credentials: scrCredentials, references: scrReferences, evidence: scrEvidence, review: scrReview })[n](c); }
+  const focusId = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : "";
+  const caret = focusId && document.activeElement.selectionStart;
+  el.innerHTML = window.DOMPurify.sanitize(html);
+  if (focusId) { const f = document.getElementById(focusId); if (f) { f.focus(); try { f.setSelectionRange(caret, caret); } catch { /* ignore */ } } }
+}
+document.querySelector(".main").addEventListener("click", e => {
+  if (handleJump(e)) return;
+  const r = e.target.closest("[data-rerun]"); if (r) { rerun(r.dataset.rerun); return; }
+  const d = e.target.closest("[data-dl]"); if (d) { download(d.dataset.dl); return; }
+});
+
+/* Overview */
+function scrOverview(c) {
+  const info = c.steps.info.data;
+  const steps = `<div class="box pad"><p class="eyebrow">AI analysis</p><ul class="steplist">${STEPS.map((s, i) => { const st = c.steps[s.id] || { status: "waiting" }; return `<li class="st-${st.status}"><span class="dot">${st.status === "done" ? "✓" : st.status === "working" ? "" : i + 1}</span><div><b>${esc(s.title)}</b><span>${esc(st.status === "working" ? st.progress || "Working..." : st.status === "skipped" ? st.note || "Skipped" : st.status === "error" ? st.error || "Failed" : STATUS[st.status])}</span></div>${["error", "stopped"].includes(st.status) && !S.running ? `<button class="btn small" data-rerun="${s.id}" type="button">Run again</button>` : ""}</li>`; }).join("")}</ul></div>`;
+  if (!info) return `${head("Proposal", c.title, esc(c.rfpName || "Pasted tender"))}<div class="ovgrid"><div>${stepWait(c, "info", "The overview fills in once the RFP has been read.")}</div><div>${steps}</div></div>`;
+  const R = readiness(c), rows = R.rows, g = gaps(c, rows), ci = closingInfo(info);
+  const cnt = k => rows.filter(r => r.status === k).length;
+  const areaVal = v => (v == null ? `<span class="aval na">Waiting</span>` : `<span class="aval"><b>${v}%</b>${pbar(v, pctCls(v))}</span>`);
+  const areas = [
+    ["RFP analysis", "analysis", R.rfp === 100 ? `<span class="aval"><span class="sti ok">✓</span> Done</span>` : areaVal(R.rfp)],
+    ["Compliance", "matrix", areaVal(R.compliance)], ["Proposal structure", "structure", areaVal(R.proposal)], ["Team", "team", areaVal(R.team)],
+    ["Credentials", "credentials", areaVal(R.credentials)], ["Evidence", "evidence", areaVal(R.evidence)],
+    ["Final review", "review", c.review ? `<span class="aval"><span class="sti ok">✓</span> ${esc(fmtDate(c.review.at))}</span>` : `<span class="aval na">Not started</span>`],
+  ];
+  const all = [...g.crit.map(x => ({ ...x, sev: "bad" })), ...g.impr.map(x => ({ ...x, sev: "warn" }))];
+  return `${head("Proposal overview", c.title, `${esc([isNA(info.client) ? "" : info.client, isNA(info.reference) ? "" : info.reference].filter(Boolean).join(" · "))}`,
+      `${c.bidId ? `<button class="btn small" type="button" data-go2="bids">Open in bid tracker</button>` : ""}<button class="btn small primary" type="button" data-go2="matrix">Open compliance matrix</button>`)}
+    <div class="ovgrid"><div class="ovmain">
+      <div class="box pad readybox">
+        <div class="readyhead"><div><p class="eyebrow">Overall readiness</p><p class="readylbl ${pctCls(R.overall)}">${esc(R.label)}</p></div><b class="big ${pctCls(R.overall)}">${R.overall}%</b></div>
+        ${pbar(R.overall, "lg " + pctCls(R.overall))}
+        <div class="kpi3">
+          <button type="button" class="okpi" data-go2="requirements"><b>${rows.length}</b><span>Requirements</span></button>
+          <button type="button" class="okpi warn" data-go2="matrix" data-filter="partial"><b>${cnt("partial")}</b><span>Partial</span></button>
+          <button type="button" class="okpi bad" data-go2="matrix" data-filter="missing"><b>${cnt("missing")}</b><span>Missing</span></button>
+        </div>
+        ${cnt("pending") ? `<p class="note">${cnt("pending")} still being checked.</p>` : ""}
+        <ul class="areas">${areas.map(([l, s, v]) => `<li><button type="button" data-go2="${s}"><span class="al">${esc(l)}</span>${v}</button></li>`).join("")}</ul>
+      </div>
+    </div><div class="ovside">
+      <div class="box pad assistin"><div class="ah">${ico("spark")}<b>Proposal assistant</b></div>
+        ${S.running ? `<p class="note">Still analysing. Gaps appear as each step finishes.</p>` : ""}
+        ${all.length ? `<p>I found ${all.length === 1 ? "one gap" : `${all.length} gaps`}:</p><ul>${all.slice(0, 5).map(x => `<li class="${x.sev}"><button type="button" ${x.rowId ? `data-row="${esc(x.rowId)}"` : `data-go2="${esc(x.go || "matrix")}"`}>${esc(x.text)}</button></li>`).join("")}</ul>${all.length > 5 ? `<p class="note">and ${all.length - 5} more.</p>` : ""}
+          <button type="button" class="btn small primary" data-go2="matrix" data-filter="${g.crit.length ? "missing" : "partial"}">Review gaps</button>` : S.running ? "" : `<p>No gaps found so far.</p>`}
+      </div>
+      ${ci ? `<div class="box pad"><p class="eyebrow">Key dates</p><dl class="facts one">${fact("Closing date", info.submissionDeadline, `<br><span class="countdown ${ci.days < 0 ? "late" : ""}">${esc(ci.text)}</span>`)}${isNA(info.briefingSession) ? "" : fact("Briefing session", info.briefingSession)}</dl></div>` : ""}
+      ${steps}
+    </div></div>`;
+}
+
+/* RFP analysis */
+function scrAnalysis(c) {
+  const x = c.steps.info.data;
+  return `${head("RFP", "RFP analysis", `${esc(c.rfpName || "Pasted tender")} · analysed ${esc(fmtDate(c.createdAt))}`, `<button class="btn small" data-rerun="info" type="button" ${S.running ? "disabled" : ""}>Read the RFP again</button>`)}
+    ${x ? `<div class="vstack">${viewAnalysis(x)}</div>` : stepWait(c, "info")}`;
+}
+
+/* Requirements */
+function scrRequirements(c) {
+  const x = c.steps.info.data; if (!x) return `${head("RFP", "Requirements")}${stepWait(c, "info")}`;
+  const rows = matrixRows(c), by = t => rows.filter(r => r.type === t);
+  const line = r => `<li><button type="button" class="reqline" data-row="${esc(r.id)}"><span class="ref">${esc(r.ref)}</span><span class="txt">${esc(r.text)}${r.disq ? ` <span class="pill bad">Disqualifying</span>` : ""}</span>${stPill(r.status)}</button></li>`;
+  const group = (t, title, note) => by(t).length ? `<section class="box pad"><div class="grouphead"><h2>${esc(title)}</h2><span class="note">${esc(note)}</span></div><ul class="reqlist">${by(t).map(line).join("")}</ul></section>` : "";
+  return `${head("RFP", "Requirements", `Everything the RFP asks for, in one list. ${rows.length} requirements found. Click one to see the evidence.`)}
+    <div class="vstack">
+      ${group("Mandatory", "Mandatory requirements", "Pass or fail. Missing one can disqualify the bid.")}
+      ${group("Team", "Key personnel", "Roles the client wants CVs for.")}
+      ${group("Experience", "Previous work", "Proof of similar projects the client asks for.")}
+      ${group("Scored", "Scored criteria", "How the proposal earns points.")}
+      ${!rows.length ? `<div class="box empty">No requirements were found in the RFP.</div>` : ""}
+    </div>`;
+}
+
+/* Compliance matrix */
+const MX = { filter: "all", type: "all", q: "" };
+function scrMatrix(c) {
+  if (!c.steps.info.data) return `${head("RFP", "Compliance matrix")}${stepWait(c, "info")}`;
+  const rows = matrixRows(c), n = k => rows.filter(r => r.status === k).length;
+  const types = ["Mandatory", "Team", "Experience", "Scored"];
+  const shown = rows.filter(r => (MX.filter === "all" || r.status === MX.filter) && (MX.type === "all" || r.type === MX.type) && (!MX.q || norm(r.text + " " + r.ref).includes(norm(MX.q))));
+  const evLabel = r => {
+    if (r.status === "pending") return `<span class="evnote">Checking...</span>`;
+    if (r.act && !r.evid.length) return `<span class="evnote">Action, not a document</span>`;
+    if (!r.evid.length) return r.type === "Scored" ? `<span class="evnote">${r.sectionId ? "Written answer" : "None"}</span>` : `<span class="evmiss">Missing</span>`;
+    const f = r.evid[0];
+    return `<span class="evfirst">${esc(f.label || baseName(f.path))}</span>${r.evid.length > 1 ? `<span class="evmore">+${r.evid.length - 1}</span>` : ""}`;
+  };
+  const chip = (k, l, cnt) => `<button type="button" class="chip ${MX.filter === k ? "on" : ""}" data-mf="${k}">${esc(l)} <span>${cnt}</span></button>`;
+  return `${head("RFP", "Compliance matrix", "Every requirement, where the proposal answers it, and the proof. Click a row for the detail. You can change any status.")}
+    <div class="box mxbox">
+      <div class="mxbar">
+        <div class="chips">${chip("all", "All", rows.length)}${chip("missing", "Missing", n("missing"))}${chip("partial", "Partial", n("partial"))}${chip("complete", "Complete", n("complete"))}${n("pending") ? chip("pending", "Checking", n("pending")) : ""}</div>
+        <div class="mxfil"><select id="mxType" aria-label="Requirement type"><option value="all">All types</option>${types.map(t => `<option value="${t}" ${MX.type === t ? "selected" : ""}>${t === "Team" ? "Key personnel" : t === "Experience" ? "Previous work" : t}</option>`).join("")}</select>
+        <input type="search" id="mxSearch" placeholder="Search requirements" aria-label="Search requirements" value="${esc(MX.q)}"></div>
+      </div>
+      <div class="tbl"><table class="mx"><thead><tr><th>Requirement</th><th>Section</th><th>Evidence</th><th class="c">Status</th></tr></thead><tbody>
+        ${shown.map(r => { const s = secById(c, r.sectionId); return `<tr data-row="${esc(r.id)}" tabindex="0"><td><span class="ref">${esc(r.ref)}</span> ${esc(clip(r.text, 140))}${r.text.length > 140 ? "..." : ""}<span class="ty">${esc(r.type === "Team" ? "Key personnel" : r.type === "Experience" ? "Previous work" : r.type)}</span></td><td>${s ? `<span class="secname">${secNo(c, s)} ${esc(s.title)}</span>` : `<span class="evmiss">No section</span>`}</td><td>${evLabel(r)}</td><td class="c">${stIcon(r.status)}${r.overridden ? `<span class="ovr" title="Set by hand">edited</span>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="4" class="evnote">Nothing matches this filter.</td></tr>`}
+      </tbody></table></div>
+    </div>`;
+}
+document.querySelector("#scr-matrix").addEventListener("click", e => { const f = e.target.closest("[data-mf]"); if (f) { MX.filter = f.dataset.mf; render(); } });
+document.querySelector("#scr-matrix").addEventListener("change", e => { if (e.target.id === "mxType") { MX.type = e.target.value; render(); } });
+document.querySelector("#scr-matrix").addEventListener("input", e => { if (e.target.id === "mxSearch") { MX.q = e.target.value; render(); } });
+document.querySelector("#scr-matrix").addEventListener("keydown", e => { const r = e.target.closest("tr[data-row]"); if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openRowPanel(r.dataset.row); } });
+
+/* Side panel */
+let drawerRow = null, drawerWhy = null;
+function openDrawer(kind, title, html) {
+  $("#drawerKind").textContent = kind; $("#drawerTitle").textContent = title;
+  $("#drawerBody").innerHTML = window.DOMPurify.sanitize(html);
+  $("#drawer").hidden = false; $("#scrim").hidden = false;
+  requestAnimationFrame(() => $("#drawer").classList.add("in"));
+  $("#drawerClose").focus();
+}
+function closeDrawer() { drawerRow = null; drawerWhy = null; $("#drawer").classList.remove("in"); $("#drawer").hidden = true; $("#scrim").hidden = true; }
+$("#drawerClose").addEventListener("click", closeDrawer);
+$("#scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden && !document.querySelector("dialog[open]")) closeDrawer(); });
+
+function evList(items) {
+  return items.length ? `<ul class="evlist">${items.map((f, i) => `<li><button type="button" class="filechip" data-evi="${i}">${esc(f.label || baseName(f.path))}</button>${f.note ? `<span class="pill ${esc(f.cls || "na")}">${esc(f.note)}</span>` : ""}</li>`).join("")}</ul>` : `<p class="evnote">No supporting documents found.</p>`;
+}
+function openRowPanel(id) {
+  const c = S.current; if (!c) return;
+  const r = matrixRows(c).find(x => x.id === id); if (!r) return;
+  drawerRow = r; drawerWhy = null;
+  const secOpts = arr(c.structure).map(s => `<option value="${esc(s.id)}" ${s.id === r.sectionId ? "selected" : ""}>${secNo(c, s)} ${esc(s.title)}</option>`).join("");
+  const o = c.overrides[r.id] || "";
+  openDrawer(`${r.ref} · ${r.type === "Team" ? "Key personnel" : r.type === "Experience" ? "Previous work" : r.type}`, "Requirement detail", `
+    <section><h3>RFP requirement</h3><p>${esc(r.text)}</p>${r.proof ? `<p class="note">${r.type === "Scored" ? "Detail" : "Proof asked for"}: ${esc(r.proof)}</p>` : ""}
+      <div class="row">${stPill(r.status)}${r.disq ? `<span class="pill bad">Disqualifying if missed</span>` : ""}${r.points ? `<span class="pill na">${r.points} points</span>` : ""}</div></section>
+    <section class="airec"><h3>${ico("spark")} Recommendation</h3><p>${esc(r.rec || "No recommendation yet.")}</p></section>
+    <section><h3>Evidence found</h3><p class="note">${r.evid.length ? `${r.evid.length} document${r.evid.length === 1 ? "" : "s"}. Click one to see the proof.` : ""}</p>${evList(r.evid)}</section>
+    <section class="ctrl"><div><label for="rpSec">Proposal section</label><select id="rpSec"><option value="">Not in the proposal</option>${secOpts}</select></div>
+      <div><label for="rpSt">Status</label><select id="rpSt"><option value="">Automatic (${esc(ST[r.auto || r.status][2].toLowerCase())})</option>${["complete", "partial", "missing"].map(k => `<option value="${k}" ${o === k ? "selected" : ""}>${ST[k][2]}</option>`).join("")}</select></div></section>
+    <div class="row drawerfoot"><button class="btn" type="button" data-evi="0" ${r.evid.length ? "" : "disabled"}>View evidence</button><button class="btn primary" type="button" id="rpAdd">Add to proposal</button></div>`);
+}
+$("#drawerBody").addEventListener("click", e => {
+  const c = S.current;
+  const v = e.target.closest("[data-evi]");
+  if (v && drawerRow) { const f = drawerRow.evid[Number(v.dataset.evi)]; if (f) openEvidence({ path: f.path, quote: f.quote, terms: f.terms || drawerRow.text, title: f.label || drawerRow.text }); return; }
+  if (v && drawerWhy) { const f = drawerWhy.items[Number(v.dataset.evi)]; if (f) openEvidence(f); return; }
+  if (e.target.id === "rpAdd" && drawerRow && c) {
+    const sid = $("#rpSec").value || drawerRow.sectionId;
+    if (!sid) { toast("Choose a proposal section first."); return; }
+    c.links[drawerRow.id] = sid; saveRun(true);
+    const s = secById(c, sid); toast(`Added to ${secNo(c, s)} ${s.title}`); closeDrawer(); render();
+  }
+  const wa = e.target.closest("[data-use]"); if (wa) { toggleUse(JSON.parse(wa.dataset.use)); openWhy(drawerWhy.key); }
+});
+$("#drawerBody").addEventListener("change", e => {
+  const c = S.current; if (!c || !drawerRow) return;
+  if (e.target.id === "rpSec") { if (e.target.value) c.links[drawerRow.id] = e.target.value; else c.links[drawerRow.id] = "none"; }
+  if (e.target.id === "rpSt") { if (e.target.value) c.overrides[drawerRow.id] = e.target.value; else delete c.overrides[drawerRow.id]; }
+  saveRun(true); const id = drawerRow.id; render(); openRowPanel(id);
+});
+
+/* Proposal structure */
+let dragFrom = null, openSec = null, pendingSecDel = null;
+function scrStructure(c) {
+  if (!c.steps.info.data) return `${head("Build", "Proposal structure")}${stepWait(c, "info")}`;
+  const st = c.structure, rows = matrixRows(c), sg = suggestions(c), R = readiness(c);
+  const STS = { done: ["ok", "✓", "Done"], attention: ["warn", "!", "Needs attention"], todo: ["na", "○", "Not started"] };
+  return `${head("Build", "Proposal structure", "The outline of your proposal. Drag sections to reorder them, click the status to change it, and open a section to see what it must answer.",
+      `<button class="btn primary" type="button" data-addsec>+ Add section</button>`)}
+    <div class="box pad"><div class="readyhead"><p class="eyebrow">Sections written</p><b class="mid ${pctCls(R.proposal || 0)}">${R.proposal || 0}% complete</b></div>${pbar(R.proposal || 0, pctCls(R.proposal || 0))}</div>
+    ${sg.length ? `<div class="box pad suggest"><div class="ah">${ico("spark")}<b>Suggested by the AI</b><span class="note">The AI recommends. Your team decides.</span></div>
+      ${sg.map(s => `<div class="sgrow"><p>Add <b>"${esc(s.title)}"</b> because ${esc(s.why)}.</p><div class="row"><button class="btn small primary" type="button" data-sgadd="${esc(s.id)}" data-sgtitle="${esc(s.title)}">Add section</button><button class="btn small ghost" type="button" data-sgx="${esc(s.id)}">Dismiss</button></div></div>`).join("")}</div>` : ""}
+    <ol class="secs" id="outline">${st.map((s, i) => {
+      const linked = rows.filter(r => r.sectionId === s.id), used = arr(c.used).filter(u => u.section === s.id);
+      const worst = linked.some(r => r.status === "missing") ? "bad" : linked.some(r => r.status === "partial") ? "warn" : linked.length ? "ok" : "na";
+      const [cls, icon, label] = STS[s.status] || STS.todo;
+      return `<li class="sec" data-i="${i}">
+        <div class="secrow"><span class="handle" draggable="true" data-drag="${i}" title="Drag to move" aria-hidden="true">≡</span><span class="no">${String(i + 1).padStart(2, "0")}</span>
+          <input type="text" class="sectitle" id="st-${esc(s.id)}" data-stitle="${esc(s.id)}" value="${esc(s.title)}" aria-label="Section ${i + 1} title">
+          ${linked.length || used.length ? `<button type="button" class="linkchip ${worst}" data-sexp="${esc(s.id)}">${linked.length ? `${linked.length} requirement${linked.length === 1 ? "" : "s"}` : ""}${linked.length && used.length ? " · " : ""}${used.length ? `${used.length} evidence` : ""}</button>` : ""}
+          <button type="button" class="secst ${cls}" data-sst="${esc(s.id)}" title="Click to change the status"><span class="sti ${cls}">${icon}</span><span>${label}</span></button>
+          <span class="secbtns"><button type="button" class="btn small ghost" data-smove="${i}:-1" aria-label="Move up" ${i ? "" : "disabled"}>↑</button><button type="button" class="btn small ghost" data-smove="${i}:1" aria-label="Move down" ${i < st.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="btn small ghost" data-sexp="${esc(s.id)}" aria-expanded="${openSec === s.id}">${openSec === s.id ? "Close" : "Open"}</button></span>
+        </div>
+        ${arr(s.subs).length && openSec !== s.id ? `<ul class="subs">${arr(s.subs).map((x, j) => `<li>${i + 1}.${j + 1} ${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${openSec === s.id ? `<div class="secopen">
+          <div><label for="subs-${esc(s.id)}">Sub-sections (one per line)</label><textarea id="subs-${esc(s.id)}" data-ssubs="${esc(s.id)}" rows="4">${esc(arr(s.subs).join("\n"))}</textarea></div>
+          <div><p class="lbl">What this section must answer</p>${linked.length ? `<ul class="reqlist">${linked.map(r => `<li><button type="button" class="reqline" data-row="${esc(r.id)}"><span class="ref">${esc(r.ref)}</span><span class="txt">${esc(clip(r.text, 120))}</span>${stIcon(r.status)}</button></li>`).join("")}</ul>` : `<p class="evnote">No requirements linked. Link them from the compliance matrix.</p>`}
+          ${used.length ? `<p class="lbl">Evidence added</p><ul class="evlist">${used.map(u => `<li>${fileChip(u.path)}<span class="evnote">${esc(u.label)}</span></li>`).join("")}</ul>` : ""}
+          <div class="row end"><button type="button" class="btn small danger" data-sdel="${esc(s.id)}">${pendingSecDel === s.id ? "Confirm delete" : "Delete section"}</button></div></div>` : ""}
+      </li>`;
+    }).join("")}</ol>`;
+}
+const scrS = $("#scr-structure");
+function structEdit(fn) { const c = S.current; if (!c || !c.structure) return; fn(c, c.structure); saveRun(true); render(); }
+scrS.addEventListener("click", e => {
+  const t = e.target.closest("[data-sst],[data-smove],[data-sexp],[data-sdel],[data-addsec],[data-sgadd],[data-sgx]"); if (!t) return;
+  if (t.dataset.sst) structEdit((c, st) => { const s = st.find(x => x.id === t.dataset.sst); s.status = { todo: "attention", attention: "done", done: "todo" }[s.status] || "attention"; });
+  else if (t.dataset.smove) structEdit((c, st) => { const [i, d] = t.dataset.smove.split(":").map(Number), j = i + d; if (j < 0 || j >= st.length) return; [st[i], st[j]] = [st[j], st[i]]; });
+  else if (t.dataset.sexp) { openSec = openSec === t.dataset.sexp ? null : t.dataset.sexp; pendingSecDel = null; render(); }
+  else if (t.dataset.sdel) {
+    if (pendingSecDel !== t.dataset.sdel) { pendingSecDel = t.dataset.sdel; render(); return; }
+    structEdit((c, st) => { const i = st.findIndex(x => x.id === t.dataset.sdel); if (i >= 0) st.splice(i, 1); Object.keys(c.links).forEach(k => { if (c.links[k] === t.dataset.sdel) delete c.links[k]; }); pendingSecDel = null; openSec = null; });
+  }
+  else if (t.hasAttribute("data-addsec")) { const s = { id: "s" + uid(), title: "New section", status: "todo", subs: [] }; structEdit((c, st) => st.push(s)); openSec = s.id; render(); setTimeout(() => { const f = document.getElementById("st-" + s.id); if (f) { f.focus(); f.select(); } }, 0); }
+  else if (t.dataset.sgadd) {
+    structEdit((c, st) => { const at = Math.max(0, st.findIndex(x => SEC_KEYS.comm.test(x.title))); st.splice(at || st.length, 0, { id: "s" + uid(), title: t.dataset.sgtitle, status: "todo", subs: [] }); });
+    toast(`Added "${t.dataset.sgtitle}"`);
+  }
+  else if (t.dataset.sgx) structEdit(c => { c.dismissed.push(t.dataset.sgx); });
+});
+scrS.addEventListener("change", e => {
+  const ti = e.target.closest("[data-stitle]"); if (ti) { structEdit((c, st) => { const s = st.find(x => x.id === ti.dataset.stitle); if (s) s.title = clip(ti.value.trim(), 120) || s.title; }); return; }
+  const sb = e.target.closest("[data-ssubs]"); if (sb) structEdit((c, st) => { const s = st.find(x => x.id === sb.dataset.ssubs); if (s) s.subs = sb.value.split("\n").map(x => clip(x.trim(), 120)).filter(Boolean).slice(0, 20); });
+});
+scrS.addEventListener("keydown", e => { if (e.target.matches("[data-stitle]") && e.key === "Enter") e.target.blur(); });
+scrS.addEventListener("dragstart", e => {
+  const h = e.target.closest && e.target.closest("[data-drag]"); if (!h) return;
+  dragFrom = Number(h.dataset.drag); const li = h.closest(".sec"); li.classList.add("dragging");
+  try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(dragFrom)); e.dataTransfer.setDragImage(li, 20, 20); } catch { /* ignore */ }
+});
+scrS.addEventListener("dragover", e => { const li = e.target.closest(".sec"); if (li && dragFrom != null) { e.preventDefault(); scrS.querySelectorAll(".sec.over").forEach(x => x !== li && x.classList.remove("over")); li.classList.add("over"); } });
+scrS.addEventListener("dragleave", e => { const li = e.target.closest(".sec"); if (li && !li.contains(e.relatedTarget)) li.classList.remove("over"); });
+scrS.addEventListener("drop", e => {
+  const li = e.target.closest(".sec"); if (!li || dragFrom == null) return; e.preventDefault();
+  const to = Number(li.dataset.i), from = dragFrom; dragFrom = null;
+  if (from !== to) structEdit((c, st) => { const [m] = st.splice(from, 1); st.splice(to, 0, m); });
+  else render();
+});
+scrS.addEventListener("dragend", () => { dragFrom = null; scrS.querySelectorAll(".dragging,.over").forEach(x => x.classList.remove("dragging", "over")); });
+
+/* Using evidence in the proposal */
+function isUsed(u) { const c = S.current; return !!(c && arr(c.used).some(x => x.path === u.path && x.kind === u.kind && (x.role || "") === (u.role || ""))); }
+function toggleUse(u) {
+  const c = S.current; if (!c) return;
+  ensureExtras(c);
+  if (isUsed(u)) { c.used = c.used.filter(x => !(x.path === u.path && x.kind === u.kind && (x.role || "") === (u.role || ""))); toast("Removed from the proposal"); }
+  else {
+    const s = findSection(c, u.kind === "cv" ? "team" : "cred") || arr(c.structure)[0];
+    c.used.push({ ...u, section: s ? s.id : "" }); toast(s ? `Added to ${secNo(c, s)} ${s.title}` : "Added to the proposal");
+  }
+  saveRun(true); render();
+}
+const useBtn = u => `<button type="button" class="btn small ${isUsed(u) ? "added" : "primary"}" data-use="${esc(JSON.stringify(u))}">${isUsed(u) ? "✓ Added" : "Add to proposal"}</button>`;
+document.querySelector(".main").addEventListener("click", e => {
+  const u = e.target.closest("[data-use]"); if (u) { toggleUse(JSON.parse(u.dataset.use)); return; }
+  const p = e.target.closest("[data-ev]"); if (p) { openEvidence(JSON.parse(p.dataset.ev)); return; }
+  const w = e.target.closest("[data-why]"); if (w) { openWhy(w.dataset.why); }
+});
+
+/* Team */
+const candKey = (role, name) => `${role}::${name}`;
+function projectsFor(name) {
+  const n = norm(name); if (!n) return [];
+  return allDocs().filter(d => d.kind === "project" && norm(d.text).includes(n));
+}
+function scrTeam(c) {
+  const cv = c.steps.cv.data; if (!cv) return `${head("Evidence", "Team")}${stepWait(c, "cv", "Only CVs that meet every stated requirement of a role are put forward.")}`;
+  const roles = arr(cv.roles);
+  return `${head("Evidence", "Recommended team", "Only CVs that meet every stated requirement of a role are put forward. Click a match score to see why the person matched, with the proof from their CV.")}
+    <div class="vstack">${roles.map(r => {
+      const ok = matchingCvs(r), near = nearMisses(r);
+      return `<section class="teamrole"><div class="grouphead"><h2>${esc(r.role)}</h2>${r.requirementSummary ? `<span class="note">${esc(r.requirementSummary)}</span>` : ""}</div>
+        <div class="cards">${ok.length ? ok.map(cd => {
+          const m = Math.max(0, Math.min(100, Number(cd.match) || 0)), doc = docForCandidate(cd), projs = projectsFor(cd.name);
+          const u = { kind: "cv", path: doc ? doc.path : cd.file || "", label: `${cd.name} (${r.role})`, role: r.role };
+          return `<article class="box mcard"><div class="mtop"><div><b class="mname">${esc(cd.name)}</b><span class="pill ok">Meets all requirements</span></div>
+              <button type="button" class="score" data-why="${esc(candKey(r.role, cd.name))}" title="Why this person matched">${m}%</button></div>
+            ${pbar(m, "ok")}
+            <ul class="ticks">${arr(cd.meets).slice(0, 6).map(t => `<li>${esc(t)}</li>`).join("")}</ul>
+            <div class="tags">${staleTag(cd)}</div>
+            <p class="note">Evidence: ${projs.length ? `named in ${projs.length} past project report${projs.length === 1 ? "" : "s"}` : "no past project reports name this person"}.</p>
+            <div class="row">${doc ? `<button type="button" class="btn small" data-view="${esc(doc.path)}">View CV</button>` : ""}<button type="button" class="btn small ghost" data-why="${esc(candKey(r.role, cd.name))}">Why this match</button><span class="grow"></span>${u.path ? useBtn(u) : ""}</div></article>`;
+        }).join("") : `<div class="nomatch nomatch-bad"><b>No CV meets all the requirements for this role.</b> Find a consultant who does, or ask the client whether an equivalent is acceptable.</div>`}</div>
+        ${near.length ? `<details class="near"><summary>${near.length === 1 ? "1 closest CV that does not" : near.length + " closest CVs that do not"} meet all requirements (not recommended)</summary>${near.map(candCard).join("")}</details>` : ""}
+      </section>`;
+    }).join("")}</div>`;
+}
+function openWhy(key) {
+  const c = S.current; if (!c || !c.steps.cv.data) return;
+  const [role, name] = key.split("::");
+  const r = arr(c.steps.cv.data.roles).find(x => x.role === role), cd = r && arr(r.candidates).find(x => x.name === name);
+  if (!cd) return;
+  const doc = docForCandidate(cd), pack = buildPack(c), p = pack.personnel.find(x => x.role === role && x.name === name);
+  const items = [];
+  const reqs = arr(cd.evidence).length ? arr(cd.evidence).map(e => ({ req: e.requirement, quote: e.quote })) : arr(cd.meets).map(m => ({ req: m, quote: "" }));
+  const lines = reqs.map(x => {
+    const q = doc ? findQuote(doc, x.req, x.quote) : null;
+    const ok = q && q.verified && q.line;
+    items.push({ path: doc ? doc.path : "", quote: x.quote, terms: x.req, title: `${name}: ${x.req}` });
+    return `<tr><td><b>${esc(x.req)}</b></td><td>${ok ? `<button type="button" class="quote" data-evi="${items.length - 1}">"${esc(clip(q.line, 150))}"</button>${q.exact ? `<span class="pill ok">Confirmed in CV</span>` : q.aiMiss ? `<span class="pill warn">Closest line in the CV. Check it.</span>` : `<span class="pill ok">Found in CV</span>`}` : `<span class="pill warn">Not found in the CV text. Check by hand.</span>`}</td></tr>`;
+  }).join("");
+  drawerWhy = { key, items }; drawerRow = null;
+  const projs = projectsFor(name), u = { kind: "cv", path: doc ? doc.path : cd.file || "", label: `${name} (${role})`, role };
+  openDrawer(role, `Why ${name} matched`, `
+    <section><div class="row"><b class="bigscore">${esc(cd.match)}%</b><span class="pill ok">Meets all requirements</span></div>${cd.summary ? `<p>${esc(cd.summary)}</p>` : ""}</section>
+    <section><h3>Requirement and proof</h3><div class="tbl"><table class="why"><thead><tr><th>Requirement</th><th>Evidence</th></tr></thead><tbody>${lines || `<tr><td colspan="2" class="evnote">The AI gave no detail for this match.</td></tr>`}</tbody></table></div>
+      <p class="note">Every quote is checked against the CV text. Click a quote to see it in the CV.</p></section>
+    ${p && p.certs.length ? `<section><h3>Certificates on file</h3><ul class="evlist">${p.certs.map(ct => `<li><span class="evlabel">${esc(ct.required)}</span>${ct.status === "Found" && ct.file ? fileChip(ct.file) : ""}${ct.status === "Found" ? (ct.expiry ? `<span class="pill ${ct.expiry.cls}">${esc(ct.expiry.label)}</span>` : `<span class="pill ok">Found</span>`) : pill(ct.status === "Missing" ? "Not found" : ct.status)}</li>`).join("")}</ul></section>` : ""}
+    <section><h3>Past projects naming ${esc(name)}</h3>${projs.length ? `<ul class="evlist">${projs.map(d => `<li>${fileChip(d.path)}</li>`).join("")}</ul>` : `<p class="evnote">None in the folder.</p>`}</section>
+    <div class="row drawerfoot">${doc ? `<button type="button" class="btn" data-view="${esc(doc.path)}">View CV</button>` : ""}${u.path ? useBtn(u) : ""}</div>`);
+}
+
+/* Credentials */
+const CR = { q: "" };
+const STRENGTH = { High: ["strong", "Strong match"], Medium: ["good", "Good match"], Low: ["poss", "Possible match"] };
+function credCard(o) {
+  const u = { kind: "cred", path: o.path, label: o.title };
+  return `<article class="box ccard ${o.cls}"><span class="badge ${o.cls}">${o.cls === "strong" ? "★ " : ""}${esc(o.badge)}</span>
+    <h3>${esc(o.title)}</h3>${o.meta ? `<p class="note">${esc(o.meta)}</p>` : ""}
+    ${o.because.length ? `<p class="lbl">Relevant because:</p><ul class="ticks">${o.because.map(b => `<li class="${b.no ? "no" : b.unk ? "unk" : ""}">${esc(b.t)}</li>`).join("")}</ul>` : ""}
+    ${o.q && o.q.line ? `<p class="qline">${locChip(o.q)}"${esc(clip(o.q.line, 160))}"</p>` : ""}
+    <div class="row"><button type="button" class="btn small" data-ev="${esc(JSON.stringify({ path: o.path, quote: o.quote || "", terms: o.terms || "", title: o.title }))}">Preview</button><span class="grow"></span>${useBtn(u)}</div></article>`;
+}
+function credSearch(q) {
+  const tk = toks(q); if (!tk.length) return [];
+  const best = {};
+  allDocs().filter(d => d.kind === "project").forEach(d => segments(d).forEach(s => {
+    const n = " " + norm(s.text) + " ", hit = tk.filter(w => n.includes(" " + w)); if (!hit.length) return;
+    const score = hit.length + (norm(s.text).includes(norm(q)) ? 2 : 0);
+    if (!best[d.path] || score > best[d.path].score) best[d.path] = { d, s, hit, score };
+  }));
+  return Object.values(best).sort((a, b) => b.score - a.score).slice(0, 8).map(x => {
+    const q2 = findQuote({ text: (x.s.label ? `[${x.s.label}]\n` : "") + x.s.text }, q);
+    return { path: x.d.path, title: x.d.title || baseName(x.d.path), meta: x.s.label ? `${baseName(x.d.path)} · ${x.s.label}` : baseName(x.d.path), terms: q, q: q2, full: x.hit.length === tk.length,
+      because: tk.map(w => ({ t: w, no: !x.hit.includes(w) })) };
+  });
+}
+function scrCredentials(c) {
+  const w = c.steps.work.data, info = c.steps.info.data || {};
+  const recs = [], seen = new Set();
+  arr(w && w.requirements).forEach(r => arr(r.matches).forEach(m => {
+    if (!m.file || seen.has(m.file)) return; seen.add(m.file);
+    const d = findDoc(m.file), [cls, badge] = STRENGTH[m.relevance] || STRENGTH.Low, q = d ? findQuote(d, m.why || r.requirement, m.quote) : null;
+    recs.push({ rel: m.relevance, path: d ? d.path : m.file, title: m.project || baseName(m.file), meta: [m.client, m.year, m.value].filter(v => v && !isNA(v)).join(" · "), cls, badge, quote: m.quote, terms: m.why || r.requirement, q,
+      because: [...arr(m.checks).map(ck => ({ t: ck.rule, no: ck.result === "No", unk: ck.result === "Unknown" })), ...(m.why ? [{ t: m.why }] : []), { t: `Supports ${r.id || "the requirement"}` }].slice(0, 6) });
+  }));
+  const top = recs.filter(r => r.rel === "High" || r.rel === "Medium"), low = recs.filter(r => !(r.rel === "High" || r.rel === "Medium"));
+  const extra = shortlist(allDocs().filter(d => d.kind === "project" && !seen.has(d.path)), [...arr(info.searchTerms), ...arr(info.deliverables).flatMap(d => String(d).split(/[,;]/))], 5).picked.filter(p => p.score > 0);
+  const others = [...low.map(o => credRow(o.path, o.title, o.badge, o.q)), ...extra.map(p => credRow(p.d.path, p.d.title || baseName(p.d.path), `${p.hits.length} matching terms`, findQuote(p.d, p.hits.join(" "))))];
+  const res = CR.q.trim() ? credSearch(CR.q) : null;
+  return `${head("Evidence", "Credentials", "Past projects and credential decks that prove we have done this before. PowerPoint decks are read slide by slide, so you see the exact slide.")}
+    <div class="box pad searchbox"><label for="crSearch">Search all credentials</label><input type="search" id="crSearch" placeholder="e.g. revenue dashboards on Fabric" value="${esc(CR.q)}"></div>
+    ${res ? `<section class="vstack"><div class="grouphead"><h2>Search results</h2><span class="note">${res.length} found for "${esc(CR.q)}"</span></div>
+      ${res.length ? `<div class="cards">${res.filter(r => r.full).slice(0, 3).map(r => credCard({ ...r, cls: "strong", badge: "Strong match" })).join("")}</div>
+        ${res.filter(r => !r.full).length || res.filter(r => r.full).length > 3 ? `<h3 class="subh">Other possible matches</h3><div class="box">${[...res.filter(r => r.full).slice(3), ...res.filter(r => !r.full)].map(r => credRow(r.path, r.title, `${r.because.filter(b => !b.no).length} of ${r.because.length} words`, r.q)).join("")}</div>` : ""}` : `<div class="box empty">Nothing found. Try other words.</div>`}</section>` : ""}
+    <section class="vstack"><div class="grouphead"><h2>Recommended for this RFP</h2><span class="note">Chosen by the AI against the RFP's experience requirements.</span></div>
+      ${w ? (top.length ? `<div class="cards">${top.map(credCard).join("")}</div>` : `<div class="box empty">No strong credentials found for this RFP.</div>`) : stepWait(c, "work")}
+      ${others.length ? `<h3 class="subh">Other possible matches</h3><div class="box">${others.join("")}</div>` : ""}</section>`;
+}
+function credRow(path, title, why, q) {
+  return `<div class="crow"><div><b>${esc(title)}</b><span class="note">${esc(why)}${q && q.label ? ` · ${esc(q.label)}` : ""}</span></div><div class="row"><button type="button" class="btn small" data-ev="${esc(JSON.stringify({ path, terms: q && q.line ? q.line : title, title }))}">Preview</button>${useBtn({ kind: "cred", path, label: title })}</div></div>`;
+}
+let crT;
+document.querySelector("#scr-credentials").addEventListener("input", e => { if (e.target.id === "crSearch") { CR.q = e.target.value; clearTimeout(crT); crT = setTimeout(render, 200); } });
+
+/* References */
+function scrReferences(c) {
+  const w = c.steps.work.data, letters = allDocs().filter(d => d.kind === "letter");
+  const uses = {}, missing = [];
+  arr(w && w.requirements).forEach(r => arr(r.matches).forEach(m => {
+    if (m.letterFile) { const d = findDoc(m.letterFile); const k = d ? d.path : m.letterFile; (uses[k] ||= []).push({ project: m.project || baseName(m.file), req: r.id }); }
+    else if (m.referenceLetter === "Not found") missing.push({ project: m.project || baseName(m.file), client: m.client, req: r.id });
+  }));
+  const asksLetters = arr(c.steps.info.data && c.steps.info.data.experienceRequirements).some(e => /reference|letter/i.test(e.requirement)) || /reference letter/i.test(JSON.stringify((c.steps.info.data || {}).evaluation || ""));
+  return `${head("Evidence", "References", "Signed reference letters that back up our credentials.")}
+    ${asksLetters ? `<div class="box pad callout"><b>This RFP asks for signed reference letters.</b> Each project you use as proof needs one.</div>` : ""}
+    ${missing.length ? `<section class="box pad"><div class="grouphead"><h2>Letters still needed</h2><span class="note">Projects used as proof that have no letter in the folder.</span></div><ul class="reqlist">${missing.map(m => `<li><div class="reqline static"><span class="sti bad">✕</span><span class="txt"><b>${esc(m.project)}</b>${m.client && !isNA(m.client) ? ` · ${esc(m.client)}` : ""}<span class="note">Ask the client for a signed letter (${esc(m.req || "experience")}).</span></span></div></li>`).join("")}</ul></section>` : ""}
+    <section class="vstack"><div class="grouphead"><h2>Letters on file</h2><span class="note">${letters.length} in the folder</span></div>
+      ${!w ? stepWait(c, "work") : ""}
+      <div class="cards">${letters.map(d => {
+        const us = uses[d.path] || [], q = findQuote(d, us.map(u => u.project).join(" ") || d.title);
+        return `<article class="box ccard ${us.length ? "strong" : ""}"><span class="badge ${us.length ? "strong" : "poss"}">${us.length ? "Supports this RFP" : "Not used for this RFP"}</span><h3>${esc(d.title)}</h3>
+          ${us.length ? `<ul class="ticks">${us.map(u => `<li>${esc(u.project)}${u.req ? ` (${esc(u.req)})` : ""}</li>`).join("")}</ul>` : ""}
+          ${q.line ? `<p class="qline">"${esc(clip(q.line, 140))}"</p>` : ""}
+          <div class="row"><button type="button" class="btn small" data-ev="${esc(JSON.stringify({ path: d.path, terms: q.line || d.title, title: d.title }))}">Preview</button><span class="grow"></span>${useBtn({ kind: "cred", path: d.path, label: d.title })}</div></article>`;
+      }).join("") || `<div class="box empty">No reference letters in the folder.</div>`}</div></section>`;
+}
+
+/* Evidence check */
+function scrEvidence(c) {
+  const st = c.steps.evidence;
+  return `${head("Review", "Evidence check", "The right CV, certificates and proof of similar work for each requirement, with expiry dates checked against the closing date.", `<button class="btn small" data-rerun="evidence" type="button" ${S.running || !c.steps.info.data ? "disabled" : ""}>Check documents again</button>`)}
+    ${st && st.data ? `<div class="box pad">${viewEvidence(st.data, st)}</div>` : stepWait(c, "evidence")}`;
+}
+
+/* Final review */
+function scrReview(c) {
+  if (!c.steps.info.data) return `${head("Review", "Final review")}${stepWait(c, "info")}`;
+  const R = readiness(c), g = gaps(c, R.rows);
+  const bars = [["Compliance", R.compliance], ["Requirements met", R.rows.length ? Math.round(100 * R.rows.filter(r => r.status === "complete").length / R.rows.length) : null], ["Credentials", R.credentials], ["Team", R.team], ["Evidence", R.evidence], ["Proposal structure", R.proposal]];
+  const item = (x, sev) => `<li class="${sev}"><button type="button" ${x.rowId ? `data-row="${esc(x.rowId)}"` : `data-go2="${esc(x.go || "matrix")}"`}><span class="sti ${sev}">${sev === "bad" ? "✕" : "!"}</span>${esc(x.text)}</button></li>`;
+  return `${head("Review", "Final review", "Check the proposal against the RFP before you submit.")}
+    <div class="revgrid">
+      <div class="box pad revscore"><p class="eyebrow">Proposal readiness</p>
+        <div class="ring ${pctCls(R.overall)}" style="--p:${R.overall}"><div><b>${R.overall}%</b><span>${esc(R.label.toUpperCase())}</span></div></div>
+        ${c.review ? `<p class="note">Last review ${esc(fmtDate(c.review.at))}: ${c.review.score}%.</p>` : `<p class="note">Not reviewed yet.</p>`}
+        <div class="col"><button class="btn primary" type="button" id="runReview" ${S.running ? "disabled" : ""}>Run final review</button><button class="btn" type="button" data-dl="html">Export proposal pack</button><button class="btn link" type="button" data-dl="md">Download as text (.md)</button></div>
+      </div>
+      <div class="box pad"><p class="eyebrow">By area</p><ul class="revbars">${bars.map(([l, v]) => `<li><span>${esc(l)}</span>${v == null ? `<em class="na">Waiting</em>` : `<b>${v}%</b>${pbar(v, pctCls(v))}`}</li>`).join("")}</ul></div>
+    </div>
+    <section class="box pad"><div class="grouphead"><h2>Critical issues</h2><span class="note">These can disqualify the bid or lose many points.</span></div>${g.crit.length ? `<ul class="issues">${g.crit.map(x => item(x, "bad")).join("")}</ul>` : `<p class="okline"><span class="sti ok">✓</span> No critical issues.</p>`}</section>
+    <section class="box pad"><div class="grouphead"><h2>Recommended improvements</h2><span class="note">These make the proposal stronger.</span></div>${g.impr.length ? `<ul class="issues">${g.impr.map(x => item(x, "warn")).join("")}</ul>` : `<p class="okline"><span class="sti ok">✓</span> Nothing else to improve.</p>`}</section>`;
+}
+document.querySelector("#scr-review").addEventListener("click", e => { if (e.target.id === "runReview") runFinalReview(); });
+async function runFinalReview() {
+  const c = S.current; if (!c || S.running) return;
+  if (!S.token) { showGate(""); return; }
+  if (!c.docs) c.docs = allDocs();
+  S.ctls = []; setRunning(true); toast("Checking the documents again...");
+  await stepEvidence();
+  setRunning(false);
+  const R = readiness(c); c.review = { at: Date.now(), score: R.overall };
+  saveRun(true); render(); toast(`Final review done: ${R.overall}% ready`);
+}
+
+/* Evidence viewer */
+function openEvidence(o) {
+  const d = findDoc(o.path); if (!d) { toast("That file is not in the loaded folder."); return; }
+  const q = findQuote(d, o.terms || o.title || "", o.quote);
+  const slide = /^Slide/.test(q.label || "");
+  const lines = String(q.seg || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const mark = l => (q.line && l.trim() === String(q.line).trim() ? `<mark>${esc(l)}</mark>` : esc(l));
+  const preview = slide
+    ? `<div class="slide"><span class="slno">${esc(q.label)}</span><h4>${mark(lines[0] || "")}</h4><ul>${lines.slice(1, 9).map(l => `<li>${mark(l)}</li>`).join("")}</ul></div>`
+    : `<div class="pageprev">${q.label ? `<span class="slno">${esc(q.label)}</span>` : ""}${lines.slice(0, 40).map(l => `<p>${mark(l)}</p>`).join("")}</div>`;
+  $("#evTitle").textContent = o.title || d.title || baseName(d.path);
+  $("#evBody").innerHTML = window.DOMPurify.sanitize(`
+    <dl class="facts evfacts"><div class="fact"><dt>Source</dt><dd>${esc(baseName(d.path))}<span class="note">${esc(KIND_ONE[d.kind] || "Document")} · ${esc(dirOf(d.path))}</span></dd></div><div class="fact"><dt>Location</dt><dd>${esc(q.label || "Whole document")}</dd></div></dl>
+    ${preview}
+    <div class="relev"><p class="lbl">Relevant evidence</p>${q.line ? `<blockquote>"${esc(q.line)}"</blockquote>` : `<p class="evnote">No matching line was found in this file.</p>`}
+      ${q.verified && q.line ? `<p class="verified"><span class="sti ok">✓</span> Verified source: this text is in the file${q.exact ? " exactly as the AI quoted it" : ""}.</p>` : ""}
+      ${q.aiMiss ? `<p class="unverified"><span class="sti warn">!</span> The AI's quote was not found word for word in the file. The closest line is shown. Check it before you use it.</p>` : ""}</div>`);
+  const acts = $("#evActions"); acts.innerHTML = "";
+  const open = document.createElement("button"); open.className = "btn"; open.type = "button"; open.textContent = "Open full document";
+  open.addEventListener("click", () => { $("#evDialog").close(); openDoc(d.path); });
+  acts.appendChild(open);
+  if (S.current && ["project", "letter", "cv"].includes(d.kind)) {
+    const u = d.kind === "cv" ? null : { kind: "cred", path: d.path, label: d.title || baseName(d.path) };
+    if (u) {
+      const b = document.createElement("button"); b.className = "btn " + (isUsed(u) ? "added" : "primary"); b.type = "button"; b.textContent = isUsed(u) ? "✓ Added to proposal" : "Add to proposal";
+      b.addEventListener("click", () => { toggleUse(u); b.className = "btn " + (isUsed(u) ? "added" : "primary"); b.textContent = isUsed(u) ? "✓ Added to proposal" : "Add to proposal"; });
+      acts.appendChild(b);
+    }
+  }
+  if (!$("#evDialog").open) $("#evDialog").showModal();
+}
+$("#evClose").addEventListener("click", () => $("#evDialog").close());
+
 /* ---------------- running ---------------- */
-function setRunning(on) { S.running = on; $("#stopBtn").hidden = !on; $("#runBtn").textContent = on ? "Analysing..." : "Analyse tender"; renderSources(); }
+function setRunning(on) { S.running = on; $("#stopBtn").hidden = !on; $("#runBtn").textContent = on ? "Analysing..." : "Analyse RFP"; renderSources(); paint(); }
 async function ask(task, payload) {
   const ctl = new AbortController(); S.ctls.push(ctl);
   const j = await api("/api/analyze", { task, ...payload }, ctl.signal);
@@ -1258,70 +2056,61 @@ document.addEventListener("click", e => { const v = e.target.closest("[data-view
 function sourcesLabel() { const p = []; if (S.demoOn) p.push("demo repository"); if (S.local.length) p.push(S.localName); if (S.added.length) p.push("added documents"); return p.join(", ") || "no documents"; }
 $("#runBtn").addEventListener("click", async () => {
   if (S.running) return;
-  S.current = { id: "r" + Date.now(), title: $("#bidTitle").value.trim() || "Untitled bid", rfpName: S.rfpName, createdAt: Date.now(), sourcesLabel: sourcesLabel(), docs: allDocs(),
+  S.current = { id: "r" + Date.now(), title: $("#bidTitle").value.trim() || "Untitled proposal", rfpName: S.rfpName, createdAt: Date.now(), sourcesLabel: sourcesLabel(), docs: allDocs(),
     steps: { info: { status: "waiting" }, cv: { status: "waiting" }, work: { status: "waiting" }, evidence: { status: "waiting" } } };
-  S.ctls = []; setRunning(true); renderBoard(); $("#board").scrollIntoView({ block: "start" });
-  if (await stepInfo()) { await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); }
-  else ["cv", "work", "evidence"].forEach(k => { S.current.steps[k].status = "skipped"; S.current.steps[k].note = "Skipped because step 1 did not finish."; });
-  setRunning(false); paintAll(); saveRun();
+  ensureExtras(S.current);
+  S.ctls = []; setRunning(true); go("overview");
+  if (await stepInfo()) { ensureExtras(S.current); saveRun(true); await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); }
+  else ["cv", "work", "evidence"].forEach(k => { S.current.steps[k].status = "skipped"; S.current.steps[k].note = "Skipped because the RFP could not be read."; });
+  setRunning(false); saveRun(); render();
 });
 async function rerun(id) {
   const c = S.current; if (S.running || !c) return;
   if (!S.token) { showGate(""); return; }
   if (!c.docs) c.docs = allDocs();
-  S.ctls = []; setRunning(true); paintAll();
+  S.ctls = []; setRunning(true);
   if (!c.steps.evidence) c.steps.evidence = { status: "waiting" };
-  if (id === "info" || !c.steps.info.data) { if (await stepInfo()) { await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); } }
+  if (id === "info" || !c.steps.info.data) { if (await stepInfo()) { ensureExtras(c); await Promise.allSettled([stepCv(), stepWork()]); await stepEvidence(); } }
   else if (id === "cv") { await stepCv(); await stepEvidence(); }
   else if (id === "work") { await stepWork(); await stepEvidence(); }
   else await stepEvidence();
-  setRunning(false); paintAll(); saveRun();
+  setRunning(false); saveRun(); render();
 }
 $("#stopBtn").addEventListener("click", () => S.ctls.forEach(c => c.abort()));
-$("#board").addEventListener("click", e => {
-  const r = e.target.closest("[data-rerun]"); if (r) { rerun(r.dataset.rerun); return; }
-  const d = e.target.closest("[data-dl]"); if (d) { download(d.dataset.dl); return; }
-  if (e.target.closest("#copyMd")) navigator.clipboard.writeText(toMarkdown()).then(() => toast("Copied"), () => toast("Copy is blocked here. Use Download instead."));
-});
 
-/* ---------------- saved (this browser only) ---------------- */
-function saveRun() {
+/* ---------------- saved proposals (this browser only) ---------------- */
+function saveRun(quiet) {
   const c = S.current; if (!c || !c.steps.info.data) return;
   const rec = { id: c.id, title: c.title, rfpName: c.rfpName || "", createdAt: c.createdAt, sourcesLabel: c.sourcesLabel, bidId: c.bidId || "",
-    steps: Object.fromEntries(STEPS.map(s => [s.id, { status: c.steps[s.id].status, note: c.steps[s.id].note || "", scanNote: c.steps[s.id].scanNote || "", data: c.steps[s.id].data || null }])) };
+    structure: c.structure || null, overrides: c.overrides || {}, links: c.links || {}, used: c.used || [], dismissed: c.dismissed || [], review: c.review || null,
+    steps: Object.fromEntries(STEPS.map(s => [s.id, { status: c.steps[s.id].status === "working" ? "stopped" : c.steps[s.id].status, note: c.steps[s.id].note || "", scanNote: c.steps[s.id].scanNote || "", data: c.steps[s.id].data || null }])) };
   S.runs = [rec, ...S.runs.filter(r => r.id !== rec.id)].slice(0, 20);
-  if (store.set("bdRuns", S.runs)) toast("Saved in this browser"); else toast("Could not save in this browser. Download it to keep a copy.");
-  renderSaved();
+  const ok = store.set("bdRuns", S.runs);
+  if (!quiet) toast(ok ? "Saved in this browser" : "Could not save in this browser. Export it to keep a copy.");
+  if (screen === "home") renderRecent();
 }
-let pendingRun = null;
-function renderSaved() {
-  $("#runCount").textContent = S.runs.length;
-  const box = $("#savedBox");
-  if (!S.runs.length) { box.innerHTML = `<p class="emptybig">No saved analyses yet. Each analysis is saved in this browser automatically. Use Download to share one.</p>`; return; }
-  box.innerHTML = `<ul>${S.runs.map(r => `<li><div class="nm"><b>${esc(r.title)}</b><span>${esc(r.rfpName || "Pasted tender")} · ${fmtDate(r.createdAt)} · ${esc(r.sourcesLabel || "")}</span></div>
-    <div class="row"><button class="btn small" data-open="${esc(r.id)}" type="button">Open</button><button class="btn small danger" data-rdel="${esc(r.id)}" type="button">${pendingRun === r.id ? "Confirm delete" : "Delete"}</button></div></li>`).join("")}</ul>`;
-}
-$("#savedBox").addEventListener("click", e => {
-  const o = e.target.closest("[data-open]");
-  if (o) {
-    if (S.running) { toast("Wait for the current analysis to finish."); return; }
-    const r = S.runs.find(x => x.id === o.dataset.open); if (!r) return;
-    S.current = { ...r, docs: null, steps: Object.fromEntries(STEPS.map(s => [s.id, { ...(r.steps[s.id] || { status: "skipped", note: "This analysis was saved before this step existed. Run it again to add it." }) }])) };
-    renderBoard(); showTab("analyse"); return;
-  }
-  const d = e.target.closest("[data-rdel]");
-  if (d) {
-    const id = d.dataset.rdel;
-    if (pendingRun !== id) { pendingRun = id; renderSaved(); return; }
-    pendingRun = null; S.runs = S.runs.filter(r => r.id !== id); store.set("bdRuns", S.runs); renderSaved(); toast("Deleted");
-  }
-});
 
 /* ---------------- export ---------------- */
 function toMarkdown() {
   const c = S.current; if (!c) return "";
-  const L = [`# ${c.title}`, "", `Tender: ${c.rfpName || "pasted text"}. Analysed ${fmtDate(c.createdAt)}. Searched: ${c.sourcesLabel || ""}.`, ""];
+  const L = [`# ${c.title}: proposal pack`, "", `RFP: ${c.rfpName || "pasted text"}. Analysed ${fmtDate(c.createdAt)}. Searched: ${c.sourcesLabel || ""}.`, ""];
   const x = c.steps.info.data;
+  if (x) {
+    const R = readiness(c), g = gaps(c, R.rows);
+    L.push("## Readiness", "", `Overall: **${R.overall}%** (${R.label}).`, "", "| Area | Score |", "|---|---|");
+    [["Compliance", R.compliance], ["Team", R.team], ["Credentials", R.credentials], ["Evidence", R.evidence], ["Proposal structure", R.proposal]].forEach(([a, b]) => L.push(`| ${a} | ${b == null ? "Waiting" : b + "%"} |`));
+    if (g.crit.length) { L.push("", "### Critical issues", ""); g.crit.forEach(i => L.push(`- ${i.text}`)); }
+    if (g.impr.length) { L.push("", "### Recommended improvements", ""); g.impr.forEach(i => L.push(`- ${i.text}`)); }
+    L.push("", "## Compliance matrix", "", "| Ref | Requirement | Section | Evidence | Status |", "|---|---|---|---|---|");
+    R.rows.forEach(r => { const sec = secById(c, r.sectionId); L.push(`| ${r.ref} | ${String(r.text).replace(/\|/g, "/")} | ${sec ? secNo(c, sec) + " " + sec.title : "None"} | ${r.evid.map(f => f.label || baseName(f.path)).join("; ") || "None"} | ${ST[r.status][2]}${r.overridden ? " (set by hand)" : ""} |`); });
+    L.push("", "## Proposal structure", "");
+    arr(c.structure).forEach((sec, i) => {
+      L.push(`- **${String(i + 1).padStart(2, "0")} ${sec.title}** (${{ done: "Done", attention: "Needs attention", todo: "Not started" }[sec.status] || "Not started"})`);
+      arr(sec.subs).forEach((sub, j) => L.push(`- ${i + 1}.${j + 1} ${sub}`));
+      arr(c.used).filter(u => u.section === sec.id).forEach(u => L.push(`- Evidence: ${u.label} (${u.path})`));
+    });
+    L.push("");
+  }
   L.push("## 1. Key information");
   if (x) {
     if (x.summary) L.push("", x.summary);
@@ -1383,9 +2172,11 @@ function download(kind) {
 }
 
 /* ---------------- boot ---------------- */
-renderOutline(); renderTree(); renderSaved();
+renderTree();
 if (!API) banner("The backend address is not set. Add the API_URL repository variable and redeploy (see the README).");
 const tok = sess.get("bdToken"), exp = Number(sess.get("bdExp") || 0);
 if (tok && exp > Date.now()) { S.token = tok; $("#gate").hidden = true; } else showGate("");
 renderSources();
+const startAt = String(location.hash || "").slice(1);
+go(SCREENS.includes(startAt) && !PROPOSAL.has(startAt) ? startAt : "home");
 })();

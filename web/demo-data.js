@@ -127,6 +127,40 @@ Period: 2023
 Scope: machine learning model scoring insurance claims for fraud risk.
 Team: Priya Naidoo (lead data scientist), Sipho Dlamini (project manager).` },
 
+  { kind: "project", path: `${D}/Past Projects/Credentials deck - Public sector data and analytics 2026.pptx`, title: "Credentials deck - Public sector data and analytics 2026", text: `[Slide 1]
+Public sector data and analytics credentials (fictional demo data)
+Demo Consulting, 2026 edition
+
+[Slide 2]
+Why public sector clients choose us
+12 municipal and provincial data platforms delivered since 2019
+More than 300 public servants trained in Power BI and data literacy
+
+[Slide 3]
+Limvelo Provincial Treasury: Revenue Analytics Platform (2023 to 2024)
+Built an Azure data lake and Data Factory pipelines from SAP and billing systems
+Contract value R3.4 million. Signed reference letter available.
+
+[Slide 4]
+Mopane City Council: Electricity Revenue Dashboards on Microsoft Fabric (2024 to 2025)
+Delivered a Fabric lakehouse and 16 Power BI dashboards on revenue and electricity losses
+Trained 20 finance staff. Contract value R2.3 million.
+
+[Slide 5]
+Riverside Metro Water: Smart Meter Data Platform (2022)
+Pipelines for 1.2 million meter readings per day, with daily water loss reporting
+Contract value R2.8 million. Signed reference letter available.
+
+[Slide 6]
+Kwena Local Municipality: Billing Data Quality and POPIA Governance (2025)
+Data quality rules, data owner roles and a POPIA compliant governance framework
+Contract value R1.6 million.
+
+[Slide 7]
+Our delivery approach
+Mobilise, assess, design, build, train and support
+Every engagement ends with a skills transfer plan and 12 months of support` },
+
   { kind: "letter", path: `${D}/Reference Letters/Limvelo Treasury reference letter.pdf`, title: "Limvelo Treasury reference letter", text: `REFERENCE LETTER (fictional demo data)
 Limvelo Provincial Treasury, 12 July 2024
 To whom it may concern. Demo Consulting delivered our Revenue Analytics Platform between March 2023 and June 2024 at a value of R3.4 million. The work was delivered on time, within budget and to a high standard. We recommend them.

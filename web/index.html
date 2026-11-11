@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://*.workers.dev; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://*.workers.dev; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
 <title>RFP Bid Desk</title>
@@ -29,186 +29,244 @@
   </form>
 </div>
 
-<header class="mast">
-  <div class="wrap">
-    <div class="brand"><h1>RFP Bid Desk</h1><span class="tag" id="modeTag">Demo data</span></div>
-    <nav class="tabs" role="tablist">
-      <button class="tab" role="tab" id="tab-analyse" aria-selected="true" data-panel="analyse">Analyse tender</button>
-      <button class="tab" role="tab" id="tab-bids" aria-selected="false" data-panel="bids">Bid tracker <span class="n" id="bidCount">0</span></button>
-      <button class="tab" role="tab" id="tab-repo" aria-selected="false" data-panel="repo">Document folder <span class="n" id="docCount">0</span></button>
-      <button class="tab" role="tab" id="tab-cvs" aria-selected="false" data-panel="cvs">CV check <span class="n due" id="cvDue">0</span></button>
-      <button class="tab" role="tab" id="tab-certs" aria-selected="false" data-panel="certs">Cert check <span class="n due" id="certDue">0</span></button>
-      <button class="tab" role="tab" id="tab-saved" aria-selected="false" data-panel="saved">Saved <span class="n" id="runCount">0</span></button>
-      <button class="tab" id="logoutBtn" type="button">Sign out</button>
+<div class="app">
+  <!-- Left navigation -->
+  <aside class="side" id="side">
+    <div class="sidebrand">
+      <div class="logo" aria-hidden="true"></div>
+      <div><b>RFP Bid Desk</b><span>Proposal intelligence</span></div>
+    </div>
+    <button class="btn newprop" type="button" id="newPropBtn">+ New proposal</button>
+    <div class="curprop" id="curProp" hidden></div>
+    <nav class="nav" id="nav" aria-label="Main">
+      <button class="navi" data-go="home" type="button"><i data-ico="home"></i>Home</button>
+      <button class="navi" data-go="overview" type="button"><i data-ico="grid"></i>Overview</button>
+      <p class="navh">RFP</p>
+      <button class="navi" data-go="analysis" type="button"><i data-ico="search"></i>RFP analysis</button>
+      <button class="navi" data-go="requirements" type="button"><i data-ico="list"></i>Requirements <span class="n" id="navReq"></span></button>
+      <button class="navi" data-go="matrix" type="button"><i data-ico="table"></i>Compliance matrix <span class="n due" id="navMiss"></span></button>
+      <p class="navh">Build</p>
+      <button class="navi" data-go="structure" type="button"><i data-ico="layers"></i>Proposal structure</button>
+      <p class="navh">Evidence</p>
+      <button class="navi" data-go="team" type="button"><i data-ico="users"></i>Team</button>
+      <button class="navi" data-go="credentials" type="button"><i data-ico="award"></i>Credentials</button>
+      <button class="navi" data-go="references" type="button"><i data-ico="mail"></i>References</button>
+      <button class="navi" data-go="documents" type="button"><i data-ico="folder"></i>Documents <span class="n" id="docCount"></span></button>
+      <p class="navh">Review</p>
+      <button class="navi" data-go="evidence" type="button"><i data-ico="check"></i>Evidence check</button>
+      <button class="navi" data-go="review" type="button"><i data-ico="flag"></i>Final review</button>
+      <p class="navh">Workspace</p>
+      <button class="navi" data-go="bids" type="button"><i data-ico="chart"></i>Bid tracker <span class="n" id="bidCount"></span></button>
+      <button class="navi" data-go="checks" type="button"><i data-ico="card"></i>CV and cert checks <span class="n due" id="checkDue"></span></button>
     </nav>
-  </div>
-</header>
+    <div class="sidefoot">
+      <span class="tag" id="modeTag">Demo data</span>
+      <button class="btn link light" id="logoutBtn" type="button">Sign out</button>
+    </div>
+  </aside>
 
-<main class="wrap">
-  <div id="banner" class="banner" hidden></div>
+  <div class="mainwrap">
+    <header class="topbar">
+      <button class="btn small menubtn" type="button" id="menuBtn" aria-controls="side" aria-expanded="false">Menu</button>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="runstate" id="runState" hidden></div>
+      <button class="btn small" id="stopBtn" type="button" hidden>Stop</button>
+    </header>
+    <div id="banner" class="banner" hidden></div>
 
-  <!-- ANALYSE -->
-  <section class="panel" id="panel-analyse">
-    <div class="desk">
-      <aside class="intake">
-        <div class="box pad">
-          <p class="eyebrow">Tender</p>
-          <h2>Load the RFP, RFQ or RFI</h2>
-          <div>
-            <label for="bidTitle">Bid name</label>
-            <input type="text" id="bidTitle" placeholder="e.g. Northvale data analytics platform">
-          </div>
-          <div class="drop" id="rfpDrop">
-            <input type="file" id="rfpFile" accept=".pdf,.docx,.txt,.md,.csv">
-            <strong>Drop the tender document here</strong>
-            <span>PDF, Word (.docx) or text. Or paste it below.</span>
+    <main class="main">
+      <!-- HOME -->
+      <section class="screen" id="scr-home">
+        <div class="hero">
+          <p class="eyebrow">Proposal intelligence</p>
+          <h1>Build stronger proposals, faster.</h1>
+          <p class="lead">Upload an RFP. The app pulls out the requirements, checks them against your CVs, credentials and documents, and shows the proof. You stay in control of the proposal.</p>
+        </div>
+
+        <div class="box upload">
+          <div class="drop big" id="rfpDrop">
+            <input type="file" id="rfpFile" accept=".pdf,.docx,.pptx,.txt,.md,.csv" aria-label="Upload a new RFP">
+            <span class="plus" aria-hidden="true">+</span>
+            <strong>Upload a new RFP</strong>
+            <span>PDF, Word or PowerPoint</span>
           </div>
           <div class="filemeta" id="rfpMeta" hidden></div>
-          <div>
-            <label for="rfpText">Tender text</label>
-            <textarea id="rfpText" placeholder="The tender text appears here. You can also paste it."></textarea>
+          <div class="uprow">
+            <div class="grow">
+              <label for="bidTitle">Proposal name</label>
+              <input type="text" id="bidTitle" placeholder="e.g. Northvale data analytics platform">
+            </div>
+            <div class="upbtns">
+              <button class="btn primary" id="runBtn" type="button">Analyse RFP</button>
+            </div>
           </div>
-          <button class="btn link" id="loadSample" type="button">Load the sample tender</button>
+          <div class="upmore">
+            <button class="btn link" id="loadSample" type="button">Load the sample tender</button>
+            <details class="paste" id="pasteBox"><summary>Paste the text instead</summary>
+              <label for="rfpText" class="sr">Tender text</label>
+              <textarea id="rfpText" placeholder="The tender text appears here. You can also paste it."></textarea>
+            </details>
+          </div>
+          <details class="srcbox"><summary>Search in: <span id="srcSummary"></span></summary>
+            <ul class="sources" id="sources"></ul>
+          </details>
         </div>
 
-        <div class="box pad">
-          <p class="eyebrow">Search in</p>
-          <ul class="sources" id="sources"></ul>
-          <div class="row">
-            <button class="btn primary grow" id="runBtn" type="button">Analyse tender</button>
-            <button class="btn" id="stopBtn" type="button" hidden>Stop</button>
-          </div>
-          <p class="note">Takes about 1 to 3 minutes.</p>
+        <div class="recent">
+          <h2>Recent proposals</h2>
+          <div id="recentList"></div>
         </div>
-      </aside>
+      </section>
 
-      <section class="board" id="board"></section>
-    </div>
-  </section>
+      <!-- PROPOSAL SCREENS (filled by app.js) -->
+      <section class="screen" id="scr-overview" hidden></section>
+      <section class="screen" id="scr-analysis" hidden></section>
+      <section class="screen" id="scr-requirements" hidden></section>
+      <section class="screen" id="scr-matrix" hidden></section>
+      <section class="screen" id="scr-structure" hidden></section>
+      <section class="screen" id="scr-team" hidden></section>
+      <section class="screen" id="scr-credentials" hidden></section>
+      <section class="screen" id="scr-references" hidden></section>
+      <section class="screen" id="scr-evidence" hidden></section>
+      <section class="screen" id="scr-review" hidden></section>
 
-  <!-- BID TRACKER -->
-  <section class="panel" id="panel-bids" hidden>
-    <div class="box cvbox">
-      <div class="cvhead">
-        <div class="t">
-          <p class="eyebrow">Bid tracker</p>
-          <h2>Our proposals and how they ended</h2>
-          <p class="note">Shared with everyone who signs in. Each tender you analyse is added here as "In progress". Update the status when you submit, and add the outcome and the client's feedback when it comes back.</p>
+      <!-- DOCUMENTS -->
+      <section class="screen" id="scr-documents" hidden>
+        <div class="pagehead"><div><p class="eyebrow">Evidence</p><h1>Documents</h1><p class="note">Every CV, certificate, credential and reference letter the app can search. PowerPoint credential decks are read slide by slide.</p></div></div>
+        <div class="repo">
+          <div class="intake">
+            <div class="box pad">
+              <p class="eyebrow">Folder from this laptop</p>
+              <h2>Open a folder</h2>
+              <p class="note">Pick a folder of CVs, certificates, credential decks and reference letters. Files are read in this browser. Only the text needed for an analysis is sent to the backend, and nothing is stored there. Names with "CV" or "resume" count as CVs, names with "reference" or "letter" count as reference letters, names with "certificate", "CSD", "SBD", "tax" or "B-BBEE" count as certificates, and everything else counts as past work.</p>
+              <div class="drop" id="folderDrop">
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+                <strong>Choose a folder</strong>
+                <span>PDF, Word, PowerPoint and text files are read.</span>
+              </div>
+              <div class="filemeta" id="folderMeta" hidden></div>
+            </div>
+            <form class="box pad" id="addForm">
+              <p class="eyebrow">For this session</p>
+              <h2>Add single documents</h2>
+              <div>
+                <label for="addKind">Type</label>
+                <select id="addKind">
+                  <option value="cv">CV</option>
+                  <option value="project">Credential, past project or case study</option>
+                  <option value="letter">Reference letter</option>
+                  <option value="cert">Certificate or compliance document</option>
+                </select>
+              </div>
+              <div class="drop" id="addDrop">
+                <input type="file" id="addFiles" accept=".pdf,.docx,.pptx,.txt,.md,.csv" multiple>
+                <strong>Drop files here</strong>
+                <span>Each file becomes one document.</span>
+              </div>
+              <div class="filemeta" id="addMeta" hidden></div>
+              <div class="row end"><button class="btn primary" type="submit" id="addBtn">Add documents</button></div>
+              <p class="note">Added documents last until you close this tab.</p>
+            </form>
+          </div>
+          <div class="box tree" id="tree"></div>
         </div>
-        <div class="cvsettings certactions">
-          <button class="btn primary" type="button" id="newBidBtn">New bid</button>
-          <button class="btn" type="button" id="refreshBidsBtn">Refresh</button>
-        </div>
-      </div>
-      <div class="kpis" id="bidKpis"></div>
-      <div class="bidcharts" id="bidCharts"></div>
-      <div class="bidfilters">
-        <div class="chips" id="bidFilter" role="group" aria-label="Filter by status"></div>
-        <input type="search" id="bidSearch" placeholder="Search client, bid or reference" aria-label="Search bids">
-      </div>
-      <div id="bidTable"></div>
-      <div class="bidfoot" id="bidFoot"></div>
-    </div>
-  </section>
+      </section>
 
-  <!-- REPOSITORY -->
-  <section class="panel" id="panel-repo" hidden>
-    <div class="repo">
-      <div class="intake">
-        <div class="box pad">
-          <p class="eyebrow">Folder from this laptop</p>
-          <h2>Open a folder</h2>
-          <p class="note">Pick a folder of CVs, project reports and reference letters. Files are read in this browser. Only the text needed for an analysis is sent to the backend, and nothing is stored there. Names with "CV" or "resume" count as CVs, names with "reference" or "letter" count as reference letters, names with "certificate", "CSD", "SBD", "tax" or "B-BBEE" count as certificates, and everything else counts as past work.</p>
-          <div class="drop" id="folderDrop">
-            <input type="file" id="folderInput" webkitdirectory directory multiple>
-            <strong>Choose a folder</strong>
-            <span>PDF, Word (.docx) and text files are read.</span>
-          </div>
-          <div class="filemeta" id="folderMeta" hidden></div>
+      <!-- BID TRACKER -->
+      <section class="screen" id="scr-bids" hidden>
+        <div class="pagehead">
+          <div><p class="eyebrow">Workspace</p><h1>Bid tracker</h1><p class="note">Shared with everyone who signs in. Each RFP you analyse is added here as "In progress". Update the status when you submit, and add the outcome and the client's feedback when it comes back.</p></div>
+          <div class="row"><button class="btn primary" type="button" id="newBidBtn">New bid</button><button class="btn" type="button" id="refreshBidsBtn">Refresh</button></div>
         </div>
-        <form class="box pad" id="addForm">
-          <p class="eyebrow">For this session</p>
-          <h2>Add single documents</h2>
-          <div>
-            <label for="addKind">Type</label>
-            <select id="addKind">
-              <option value="cv">CV</option>
-              <option value="project">Past project or case study</option>
-              <option value="letter">Reference letter</option>
-              <option value="cert">Certificate or compliance document</option>
-            </select>
+        <div class="box cvbox">
+          <div class="kpis" id="bidKpis"></div>
+          <div class="bidcharts" id="bidCharts"></div>
+          <div class="bidfilters">
+            <div class="chips" id="bidFilter" role="group" aria-label="Filter by status"></div>
+            <input type="search" id="bidSearch" placeholder="Search client, bid or reference" aria-label="Search bids">
           </div>
-          <div class="drop" id="addDrop">
-            <input type="file" id="addFiles" accept=".pdf,.docx,.txt,.md,.csv" multiple>
-            <strong>Drop files here</strong>
-            <span>Each file becomes one document.</span>
-          </div>
-          <div class="filemeta" id="addMeta" hidden></div>
-          <div class="row end"><button class="btn primary" type="submit" id="addBtn">Add documents</button></div>
-          <p class="note">Added documents last until you close this tab.</p>
-        </form>
-      </div>
-      <div class="box tree" id="tree"></div>
-    </div>
-  </section>
+          <div id="bidTable"></div>
+          <div class="bidfoot" id="bidFoot"></div>
+        </div>
+      </section>
 
-  <!-- CV CHECK -->
-  <section class="panel" id="panel-cvs" hidden>
-    <div class="box cvbox">
-      <div class="cvhead">
-        <div class="t">
-          <p class="eyebrow">CV freshness</p>
-          <h2>Are the CVs up to date?</h2>
-          <p class="note">Tenders score key personnel on current CVs. Each CV should be updated at least once in the period below. The date is read from the CV text (for example "CV last updated: 14 June 2025"). If there is none, the file's saved date is used. You can type a date or email in any row.</p>
-        </div>
-        <div class="cvsettings">
-          <div>
-            <label for="cvPolicy">Update every</label>
-            <select id="cvPolicy">
-              <option value="6">6 months</option>
-              <option value="12" selected>12 months</option>
-              <option value="18">18 months</option>
-              <option value="24">24 months</option>
-            </select>
-          </div>
-          <div>
-            <label for="senderName">Your name (for emails)</label>
-            <input type="text" id="senderName" placeholder="e.g. Merhawi Hailu" autocomplete="name">
+      <!-- CV AND CERT CHECKS -->
+      <section class="screen" id="scr-checks" hidden>
+        <div class="pagehead">
+          <div><p class="eyebrow">Workspace</p><h1>CV and cert checks</h1><p class="note">Keep CVs current and make sure every certification a CV claims has a certificate on file.</p></div>
+          <div class="seg" role="tablist" aria-label="Check">
+            <button type="button" role="tab" class="segb" data-check="cvs" aria-selected="true">CV freshness <span class="n due" id="cvDue">0</span></button>
+            <button type="button" role="tab" class="segb" data-check="certs" aria-selected="false">Certificate proof <span class="n due" id="certDue">0</span></button>
           </div>
         </div>
-      </div>
-      <div class="cvsummary" id="cvSummary"></div>
-      <div id="cvTable"></div>
-    </div>
-  </section>
 
-  <!-- CERT CHECK -->
-  <section class="panel" id="panel-certs" hidden>
-    <div class="box cvbox">
-      <div class="cvhead">
-        <div class="t">
-          <p class="eyebrow">Certificate proof</p>
-          <h2>Do the CVs match the certificates on file?</h2>
-          <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate. When each person has their own folder (for example "Merhawi Hailu" holding their CV and certificates), every file in that folder is treated as theirs. It also shows certificates on file that the CV does not mention. If a file is named in an unusual way, link it by hand.</p>
+        <div class="box cvbox" id="check-cvs">
+          <div class="cvhead">
+            <div class="t">
+              <h2>Are the CVs up to date?</h2>
+              <p class="note">Tenders score key personnel on current CVs. Each CV should be updated at least once in the period below. The date is read from the CV text (for example "CV last updated: 14 June 2025"). If there is none, the file's saved date is used. You can type a date or email in any row.</p>
+            </div>
+            <div class="cvsettings">
+              <div>
+                <label for="cvPolicy">Update every</label>
+                <select id="cvPolicy">
+                  <option value="6">6 months</option>
+                  <option value="12" selected>12 months</option>
+                  <option value="18">18 months</option>
+                  <option value="24">24 months</option>
+                </select>
+              </div>
+              <div>
+                <label for="senderName">Your name (for emails)</label>
+                <input type="text" id="senderName" placeholder="e.g. Merhawi Hailu" autocomplete="name">
+              </div>
+            </div>
+          </div>
+          <div class="cvsummary" id="cvSummary"></div>
+          <div id="cvTable"></div>
         </div>
-        <div class="cvsettings certactions">
-          <button class="btn primary" type="button" id="certAiBtn">Check with AI</button>
-          <label class="toggle"><input type="checkbox" id="certProblems"><div><b>Only show problems</b></div></label>
-        </div>
-      </div>
-      <div class="aistatus">
-        <span id="certAiStatus">The page shows a quick check by name and certification code. Press <b>Check with AI</b> to have the AI read each CV and every file in the person's folder. Results are kept until the files change.</span>
-      </div>
-      <div class="cvsummary" id="certSummary"></div>
-      <div class="certlist" id="certList"></div>
-    </div>
-  </section>
 
-  <!-- SAVED -->
-  <section class="panel" id="panel-saved" hidden>
-    <div class="box saved" id="savedBox"></div>
-  </section>
-</main>
+        <div class="box cvbox" id="check-certs" hidden>
+          <div class="cvhead">
+            <div class="t">
+              <h2>Do the CVs match the certificates on file?</h2>
+              <p class="note">For each person, this reads the certifications listed in their CV and looks for a copy of each certificate. When each person has their own folder (for example "Merhawi Hailu" holding their CV and certificates), every file in that folder is treated as theirs. If a file is named in an unusual way, link it by hand.</p>
+            </div>
+            <div class="cvsettings certactions">
+              <button class="btn primary" type="button" id="certAiBtn">Check with AI</button>
+              <label class="toggle"><input type="checkbox" id="certProblems"><div><b>Only show problems</b></div></label>
+            </div>
+          </div>
+          <div class="aistatus">
+            <span id="certAiStatus">The page shows a quick check by name and certification code. Press <b>Check with AI</b> to have the AI read each CV and every file in the person's folder. Results are kept until the files change.</span>
+          </div>
+          <div class="cvsummary" id="certSummary"></div>
+          <div class="certlist" id="certList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- Proposal assistant (small, bottom right) -->
+<div class="assist" id="assist" hidden></div>
+
+<!-- Side panel -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-labelledby="drawerTitle" hidden>
+  <div class="drawerhead"><div><p class="eyebrow" id="drawerKind"></p><h2 id="drawerTitle"></h2></div><button class="btn small" type="button" id="drawerClose">Close</button></div>
+  <div class="drawerbody" id="drawerBody"></div>
+</aside>
+
+<!-- Evidence viewer -->
+<dialog class="docdlg evdlg" id="evDialog" aria-labelledby="evTitle">
+  <div class="dlghead">
+    <div class="t"><p class="eyebrow">Evidence viewer</p><h2 id="evTitle"></h2></div>
+    <button class="btn small" id="evClose" type="button">Close</button>
+  </div>
+  <div class="evbody" id="evBody"></div>
+  <div class="row dlgfoot" id="evActions"></div>
+</dialog>
 
 <dialog class="docdlg" id="docDialog" aria-labelledby="dlgTitle">
   <div class="dlghead">

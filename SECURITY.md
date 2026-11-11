@@ -26,8 +26,9 @@ This is a stakeholder demo. These controls are in place.
 ## Web app
 
 - Strict **Content Security Policy**: scripts only from the site itself, network calls only to `*.workers.dev`, no inline scripts, no forms posting elsewhere.
+- PowerPoint files are unzipped with the browser's own `DecompressionStream`, so no extra library is loaded for them.
 - Third party libraries (pdf.js, mammoth, DOMPurify) are **copied into `web/vendor/`** instead of loaded from a CDN, and pinned to fixed versions.
-- All model output is escaped and passed through DOMPurify before it is shown.
+- All model output is escaped and passed through DOMPurify before it is shown. Quotes the AI gives as proof are checked against the document text before they are marked as verified.
 - `noindex` and `no-referrer` are set, so search engines do not list the page and the URL is not leaked to other sites.
 
 ## Data
