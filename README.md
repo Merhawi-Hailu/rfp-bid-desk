@@ -18,7 +18,7 @@ The app has a left navigation that follows how a proposal team works:
 |---|---|---|
 | | **Home** | Upload a new RFP (PDF, Word or PowerPoint) and open recent proposals with their readiness score. |
 | | **Overview** | The control centre: overall readiness, how many requirements are complete, partial or missing, progress per area, and the gaps the assistant found. |
-| RFP | **RFP analysis** | Client, dates, scoring and deliverables. |
+| RFP | **RFP analysis** | Client, dates, scoring, a key deliverables table and a required resources table (each role with its certifications, registrations, qualifications, years and our matching CV). |
 | RFP | **Requirements** | Every requirement in one list: mandatory items, key personnel, previous work and scored criteria. |
 | RFP | **Compliance matrix** | Each requirement with its proposal section, evidence and status. Filter by Missing, Partial or Complete. Click a row for the recommendation and the proof, link it to a section, or change its status by hand. |
 | Build | **Proposal structure** | An outline you can reorder by dragging. Mark each section as not started, needs attention or done. The AI suggests sections the RFP scores but the outline does not cover yet. The app does not write proposal text. |

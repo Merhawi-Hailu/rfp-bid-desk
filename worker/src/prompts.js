@@ -44,7 +44,7 @@ function docBlock(d, max) {
 
 export const TASKS = {
   extract: {
-    maxTokens: 6000,
+    maxTokens: 8000,
     build(input, maxBytes) {
       const tender = clip(input.tender, 220_000);
       if (tender.trim().length < 200) { const e = new Error("tender_too_short"); e.code = "bad_request"; throw e; }
@@ -57,16 +57,17 @@ Reply with one JSON object in this shape:
  "contractDuration": string, "submissionDeadline": string, "submissionDeadlineISO": "YYYY-MM-DD" or null,
  "briefingSession": string, "submissionMethod": string, "bidValidity": string,
  "summary": string (two plain sentences on what the client wants),
- "deliverables": [string],
+ "deliverables": [string (short name of each deliverable)],
+ "deliverableDetails": [{"deliverable": string, "description": string (one sentence on what must be handed over), "due": string (when or which phase, or "Information Not Provided"), "reference": string (the tender clause, for example "4.3", or "")}],
  "mandatory": [{"id": "MAN-01", "requirement": string, "evidence": string, "disqualifying": true or false}],
  "evaluation": [{"stage": string, "criterion": string, "points": number or null, "detail": string}],
  "thresholds": [string],
- "roles": [{"role": string, "qualifications": [string], "certifications": [string], "minYears": number or null, "experience": [string], "skills": [string]}],
+ "roles": [{"role": string, "count": number or null (how many people the tender asks for), "qualifications": [string], "certifications": [string], "registrations": [string] (professional body registrations, for example ECSA Pr Eng or SACPCMP), "minYears": number or null, "experience": [string], "skills": [string], "reference": string (the tender clause, or "")}],
  "experienceRequirements": [{"id": "EXP-01", "requirement": string, "minProjects": number or null, "minValue": string or null, "withinYears": number or null, "sector": string or null, "evidenceNeeded": string}],
  "searchTerms": [10 to 25 short keywords and phrases that would appear in similar past project reports, such as technologies, sectors and types of work],
  "notStated": [important items the tender does not state]
 }
-List every key personnel role the tender names. In experienceRequirements, include every request for previous work, similar projects, references, case studies or company experience. Use an empty array if there are none.
+List every key personnel role the tender names, with every certification, qualification and professional registration asked for that role. "deliverableDetails" must have one entry for each item in "deliverables", in the same order. In experienceRequirements, include every request for previous work, similar projects, references, case studies or company experience. Use an empty array if there are none.
 
 <TENDER name="${name.replace(/"/g, "'")}">
 ${clip(tender, Math.floor(maxBytes * 0.9 * sc))}

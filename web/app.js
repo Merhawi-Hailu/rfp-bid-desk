@@ -789,8 +789,42 @@ function viewAnalysis(x) {
   ${arr(x.evaluation).length ? `<div class="box pad"><p class="eyebrow">How bids are scored</p><div class="tbl"><table><thead><tr><th>Stage</th><th>Criterion</th><th>Points</th><th>Detail</th></tr></thead><tbody>
     ${arr(x.evaluation).map(e => `<tr><td>${esc(str(e.stage))}</td><td>${esc(e.criterion)}</td><td>${Number(e.points) ? `<div class="wbar"><i style="width:${Math.round(70 * Number(e.points) / maxPts)}px"></i><span>${esc(e.points)}</span></div>` : "<span class='pill na'>n/a</span>"}</td><td>${esc(e.detail || "")}</td></tr>`).join("")}
   </tbody></table></div>${arr(x.thresholds).length ? `<p class="note">Thresholds: ${esc(arr(x.thresholds).join("; "))}</p>` : ""}</div>` : ""}
-  ${arr(x.deliverables).length ? `<div class="box pad"><p class="eyebrow">Key deliverables</p><ul class="plain">${arr(x.deliverables).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
+  ${delivTable(x)}
+  ${resourceTable(x)}
   ${arr(x.notStated).length ? `<div class="box pad"><p class="eyebrow">Not stated in the RFP</p><ul class="plain">${arr(x.notStated).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}`;
+}
+
+/** Deliverables as a table. Older analyses only have names, so the other columns show what is known. */
+function delivTable(x) {
+  const names = arr(x.deliverables), det = arr(x.deliverableDetails);
+  const rows = (det.length ? det : names.map(n => ({ deliverable: n }))).filter(d => d && (d.deliverable || d.description));
+  if (!rows.length) return "";
+  const hasDue = rows.some(d => d.due && !isNA(d.due)), hasRef = rows.some(d => d.reference);
+  return `<div class="box pad"><div class="grouphead"><p class="eyebrow">Key deliverables</p><span class="note">${rows.length} deliverable${rows.length === 1 ? "" : "s"}</span></div>
+    <div class="tbl"><table><thead><tr><th>#</th><th>Deliverable</th>${det.length ? "<th>What must be handed over</th>" : ""}${hasDue ? "<th>When</th>" : ""}${hasRef ? "<th>Clause</th>" : ""}</tr></thead><tbody>
+    ${rows.map((d, i) => `<tr><td class="id">${i + 1}</td><td><b>${esc(d.deliverable || "")}</b></td>${det.length ? `<td>${esc(d.description || "")}</td>` : ""}${hasDue ? `<td class="${isNA(d.due) ? "evnote" : ""}">${esc(isNA(d.due) ? "Not stated" : d.due)}</td>` : ""}${hasRef ? `<td class="id">${esc(d.reference || "")}</td>` : ""}</tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+/** The people and certifications the RFP asks for. When CVs have been matched, shows who fills each role. */
+function resourceTable(x) {
+  const roles = arr(x.roles); if (!roles.length) return "";
+  const c = S.current, cvRoles = arr(c && c.steps.cv.data && c.steps.cv.data.roles);
+  const list = (a, none = "Not stated") => (arr(a).length ? `<ul class="cell">${arr(a).map(v => `<li>${esc(v)}</li>`).join("")}</ul>` : `<span class="evnote">${none}</span>`);
+  const who = r => {
+    if (!cvRoles.length) return `<span class="evnote">${c && busy(c.steps.cv) ? "Matching CVs..." : "Not matched yet"}</span>`;
+    const cr = cvRoles.find(y => norm(y.role) === norm(r.role)) || cvRoles.find(y => norm(y.role).includes(norm(r.role)) || norm(r.role).includes(norm(y.role)));
+    const ok = cr ? matchingCvs(cr) : [];
+    return ok.length ? ok.slice(0, 2).map(cd => `<span class="pill ok">${esc(cd.name)}</span>`).join(" ") : `<span class="pill bad">No CV meets all</span>`;
+  };
+  const certCount = roles.reduce((n, r) => n + arr(r.certifications).length + arr(r.registrations).length, 0);
+  return `<div class="box pad"><div class="grouphead"><p class="eyebrow">Required resources</p><span class="note">${roles.length} role${roles.length === 1 ? "" : "s"} · ${certCount} certification${certCount === 1 ? "" : "s"} or registration${certCount === 1 ? "" : "s"} asked for</span></div>
+    <div class="tbl"><table class="restbl"><thead><tr><th>Role</th><th>No.</th><th>Certifications and registrations</th><th>Qualifications</th><th>Min. years</th><th>Experience</th><th>Our match</th></tr></thead><tbody>
+    ${roles.map(r => `<tr><td><b>${esc(r.role)}</b>${r.reference ? `<span class="ty">Clause ${esc(r.reference)}</span>` : ""}</td><td class="num">${esc(r.count ?? 1)}</td>
+      <td>${list([...arr(r.certifications), ...arr(r.registrations)], "None asked for")}</td><td>${list(r.qualifications)}</td>
+      <td class="num">${r.minYears != null && r.minYears !== "" ? esc(r.minYears) + "+" : `<span class="evnote">Not stated</span>`}</td>
+      <td>${list([...arr(r.experience), ...arr(r.skills)])}</td><td>${who(r)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="note">The certifications are checked against each person's certificate files on Evidence check and CV and cert checks.</p></div>`;
 }
 
 /** A CV only counts as a match when it meets every stated requirement of the role. */
@@ -922,7 +956,7 @@ function matrixRows(c) {
   arr(info.roles).forEach((r, i) => {
     const cr = cvRoles.find(x => norm(x.role) === norm(r.role)) || cvRoles.find(x => norm(x.role).includes(norm(r.role)) || norm(r.role).includes(norm(x.role)));
     const p = cr && pack.personnel.find(x => x.role === cr.role);
-    const req = [...arr(r.qualifications), ...arr(r.certifications), r.minYears ? `${r.minYears}+ years` : "", ...arr(r.experience)].filter(Boolean).join("; ");
+    const req = [...arr(r.qualifications), ...arr(r.certifications), ...arr(r.registrations), r.minYears ? `${r.minYears}+ years` : "", ...arr(r.experience)].filter(Boolean).join("; ");
     let status = "pending", rec = "", issue = "", evid = [];
     if (cvSt.data) {
       if (!p || !p.name) { status = "missing"; rec = (cr && cr.recommendation) || "No CV meets every requirement for this role. Find a consultant who does, or ask the client whether an equivalent is acceptable."; issue = `No CV meets all requirements for ${r.role}`; }
@@ -1960,7 +1994,7 @@ async function stepEvidence() {
   const people = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
     const cd = matchingCvs(r)[0]; if (!cd) return null;
     const req = arr(info.roles).find(x => norm(x.role) === norm(r.role)) || arr(info.roles).find(x => norm(r.role).includes(norm(x.role)) || norm(x.role).includes(norm(r.role)));
-    return { role: r.role, name: cd.name, certifications: arr(req && req.certifications) };
+    return { role: r.role, name: cd.name, certifications: [...arr(req && req.certifications), ...arr(req && req.registrations)] };
   }).filter(Boolean);
   const mandatory = arr(info.mandatory).map(m => ({ id: m.id, requirement: m.requirement, evidence: m.evidence }));
   const certDocs = (c.docs || allDocs()).filter(d => d.kind === "cert");
