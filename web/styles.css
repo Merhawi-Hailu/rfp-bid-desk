@@ -704,3 +704,35 @@ ul.cell { margin: 0; padding-left: 1em; display: grid; gap: 2px; }
 .hello { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ink); white-space: nowrap; padding-right: 14px; margin-right: 2px; border-right: 1px solid var(--line); }
 .hello .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 0.72rem; display: grid; place-items: center; letter-spacing: 0.02em; }
 @media (max-width: 500px) { .hello { padding-right: 8px; } .hello .avatar { display: none; } }
+
+/* Home: a checklist being checked, on the left of the heading */
+.checkanim { position: absolute; left: 2%; top: 8px; width: 180px; height: auto; opacity: 0.55; pointer-events: none; }
+.checkanim .paper rect { fill: #fff; stroke: #c9d6ea; stroke-width: 1.5; filter: drop-shadow(0 6px 14px rgba(12, 35, 64, 0.08)); }
+.checkanim .rule { stroke: var(--brand); stroke-width: 4; stroke-linecap: round; opacity: 0.5; }
+.checkanim .box { fill: #fff; stroke: #b9c9e0; stroke-width: 1.6; }
+.checkanim .bar { stroke: #e2eaf5; stroke-width: 6; stroke-linecap: round; fill: none; }
+.checkanim .fill { stroke: var(--brand-2); stroke-width: 6; stroke-linecap: round; fill: none; stroke-dasharray: 1; stroke-dashoffset: 1; animation: 9s linear infinite; }
+.checkanim .tick { stroke: var(--ok-fill); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; stroke-dasharray: 1; stroke-dashoffset: 1; animation: 9s ease-out infinite; }
+.checkanim .f1 { animation-name: fill1; } .checkanim .f2 { animation-name: fill2; } .checkanim .f3 { animation-name: fill3; }
+.checkanim .t1 { animation-name: tick1; } .checkanim .t2 { animation-name: tick2; } .checkanim .t3 { animation-name: tick3; }
+.checkanim .lens { animation: lens 9s ease-in-out infinite; }
+.checkanim .lens circle { fill: rgba(0, 145, 218, 0.08); stroke: var(--brand); stroke-width: 3; }
+.checkanim .lens path { stroke: var(--brand); stroke-width: 5; stroke-linecap: round; }
+@keyframes fill1 { 0% { stroke-dashoffset: 1; opacity: 1; } 18% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes fill2 { 0%, 30% { stroke-dashoffset: 1; opacity: 1; } 48% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes fill3 { 0%, 60% { stroke-dashoffset: 1; opacity: 1; } 78% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes tick1 { 0%, 18% { stroke-dashoffset: 1; opacity: 1; } 24% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes tick2 { 0%, 48% { stroke-dashoffset: 1; opacity: 1; } 54% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes tick3 { 0%, 78% { stroke-dashoffset: 1; opacity: 1; } 84% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes lens {
+  0% { transform: translate(80px, 70px); } 18% { transform: translate(190px, 70px); }
+  26% { transform: translate(80px, 110px); } 30% { transform: translate(80px, 110px); } 48% { transform: translate(190px, 110px); }
+  56% { transform: translate(80px, 150px); } 60% { transform: translate(80px, 150px); } 78% { transform: translate(190px, 150px); }
+  90% { transform: translate(190px, 190px); } 100% { transform: translate(80px, 70px); }
+}
+@media (max-width: 1100px) { .checkanim { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .checkanim .fill, .checkanim .tick, .checkanim .lens { animation: none; }
+  .checkanim .fill, .checkanim .tick { stroke-dashoffset: 0; }
+  .checkanim .lens { transform: translate(190px, 150px); }
+}
