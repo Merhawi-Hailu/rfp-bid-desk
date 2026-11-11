@@ -644,3 +644,25 @@ ul.cell { margin: 0; padding-left: 1em; display: grid; gap: 2px; }
 .restbl td { min-width: 110px; }
 .restbl td.num { min-width: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .restbl td .pill { margin: 0 4px 4px 0; }
+
+/* Home: two columns on wide screens */
+.main { max-width: 1480px; }
+.homegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (min-width: 1180px) { .homegrid { grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); } }
+.homemain { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.homemain .upload, .homemain .recent { max-width: none; }
+.homeside { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.glance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gl { font: inherit; text-align: left; cursor: pointer; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.gl:hover { border-color: var(--brand-2); }
+.gl b { font-size: 1.5rem; line-height: 1.1; color: var(--brand); font-variant-numeric: tabular-nums; }
+.gl.bad b { color: var(--bad); } .gl.ok b { color: var(--ok); }
+.gl span { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.howto { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: h; }
+.howto li { counter-increment: h; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
+.howto li::before { content: counter(h); grid-row: span 2; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--brand); font-weight: 700; font-size: 0.82rem; display: grid; place-items: center; }
+.howto b { font-size: 0.92rem; }
+.howto span { font-size: 0.82rem; color: var(--muted); }
+/* Hide the browser's own "No file chosen" box inside drop zones */
+.drop input[type="file"] { color: transparent; font-size: 0; }
+.drop input[type="file"]::file-selector-button { display: none; }

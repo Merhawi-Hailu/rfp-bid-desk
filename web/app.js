@@ -1113,7 +1113,7 @@ document.querySelectorAll(".drop").forEach(z => {
 
 function render() {
   refreshNav(); renderTop(); renderAssist();
-  if (screen === "home") renderRecent();
+  if (screen === "home") { renderRecent(); renderHomeSide(); }
   if (PROPOSAL.has(screen)) renderScreen(screen);
 }
 function refreshNav() {
@@ -1168,6 +1168,27 @@ let pendingRun = null;
 function hydrate(r) {
   return { ...r, docs: null, steps: Object.fromEntries(STEPS.map(s => [s.id, { ...(r.steps[s.id] || { status: "skipped", note: "This analysis was saved before this step existed. Run it again to add it." }) }])) };
 }
+let homeBidsAsked = false;
+function renderHomeSide() {
+  const box = $("#homeSide"); if (!box) return;
+  const docs = allDocs(), k = counts(docs), cvDue = Number($("#cvDue").textContent) || 0, certDue = Number($("#certDue").textContent) || 0;
+  const st = B.loaded ? bidStats(B.list) : null;
+  if (!B.loaded && S.token && !homeBidsAsked) { homeBidsAsked = true; loadBids().then(() => { if (screen === "home") renderHomeSide(); }); }
+  const steps = [["Upload the RFP", "PDF, Word or PowerPoint."], ["AI reads the requirements", "Mandatory items, roles, scoring and deliverables."], ["Review the compliance matrix", "See what is complete, partial or missing."], ["Build the proposal structure", "Reorder sections. The AI suggests gaps."], ["Match CVs, credentials and evidence", "Every match links to its proof."], ["Run the final review and export", "Fix the critical issues first."]];
+  const stat = (n, l, go, cls = "") => `<button type="button" class="gl ${cls}" data-go2="${go}"><b>${n}</b><span>${esc(l)}</span></button>`;
+  box.innerHTML = window.DOMPurify.sanitize(`
+    <div class="box pad"><p class="eyebrow">Workspace at a glance</p>
+      <div class="glance">
+        ${stat(k.cv, "CVs on file", "documents")}${stat(k.project, "Credentials and projects", "credentials")}
+        ${stat(cvDue, "CVs out of date", "checks", cvDue ? "bad" : "ok")}${stat(certDue, "Certificate problems", "checks", certDue ? "bad" : "ok")}
+        ${st ? stat(st.inProgress + st.awaiting, "Bids open", "bids") + stat(st.winRate == null ? "n/a" : st.winRate + "%", "Win rate", "bids", st.winRate == null ? "" : "ok") : ""}
+      </div>
+      <p class="note">Searching: ${esc(sourcesLabel())}.</p>
+    </div>
+    <div class="box pad"><p class="eyebrow">How it works</p><ol class="howto">${steps.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join("")}</ol>
+      <p class="note">The AI recommends. Your team decides. The app does not write proposal text.</p></div>`);
+}
+$("#homeSide").addEventListener("click", e => handleJump(e));
 function renderRecent() {
   const box = $("#recentList");
   if (!S.runs.length) { box.innerHTML = `<div class="box empty">No proposals yet. Upload an RFP above, or load the sample tender to try it.</div>`; return; }
