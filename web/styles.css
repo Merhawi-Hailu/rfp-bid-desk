@@ -669,3 +669,33 @@ ul.cell { margin: 0; padding-left: 1em; display: grid; gap: 2px; }
 /* Home heading centred */
 .hero { margin: 0 auto; align-items: center; text-align: center; max-width: 820px; padding: 28px 0 10px; }
 .hero .lead { margin: 0 auto; }
+
+/* Home: pen writing on paper, a quiet background animation */
+.herowrap { position: relative; }
+.herowrap .hero { position: relative; z-index: 1; }
+.penanim { position: absolute; right: 2%; top: 8px; width: 180px; height: auto; opacity: 0.55; pointer-events: none; }
+.penanim .paper rect { fill: #fff; stroke: #c9d6ea; stroke-width: 1.5; filter: drop-shadow(0 6px 14px rgba(12, 35, 64, 0.08)); }
+.penanim .rule { stroke: #e2eaf5; stroke-width: 1.2; fill: none; }
+.penanim .ink { fill: none; stroke: var(--brand-2); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: 9s linear infinite; }
+.penanim .l1 { animation-name: ink1; } .penanim .l2 { animation-name: ink2; } .penanim .l3 { animation-name: ink3; }
+.penanim .pen { animation: pen 9s linear infinite; }
+.penanim .barrel { fill: var(--brand); } .penanim .cap { fill: var(--brand-3); } .penanim .nib { fill: #0c2340; }
+@keyframes ink1 { 0% { stroke-dashoffset: 1; opacity: 1; } 25% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes ink2 { 0%, 30% { stroke-dashoffset: 1; opacity: 1; } 55% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes ink3 { 0%, 60% { stroke-dashoffset: 1; opacity: 1; } 85% { stroke-dashoffset: 0; } 88% { opacity: 1; } 97%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes pen {
+  0% { transform: translate(44px, 70px); }
+  25% { transform: translate(180px, 70px); }
+  30% { transform: translate(44px, 110px); }
+  55% { transform: translate(180px, 110px); }
+  60% { transform: translate(44px, 150px); }
+  85% { transform: translate(180px, 150px); }
+  92% { transform: translate(196px, 128px); }
+  100% { transform: translate(44px, 70px); }
+}
+@media (max-width: 1100px) { .penanim { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .penanim .ink, .penanim .pen { animation: none; }
+  .penanim .ink { stroke-dashoffset: 0; }
+  .penanim .pen { transform: translate(180px, 150px); }
+}
