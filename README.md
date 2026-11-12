@@ -34,7 +34,7 @@ The app has a left navigation that follows how a proposal team works:
 
 **PowerPoint files** are read in the browser. Each slide's text is kept with its slide number, so evidence points to "Slide 4" of a credentials deck. Slides that are only pictures cannot be read.
 
-It ships with a **fictional demo repository** (6 CVs, 8 projects, a PowerPoint credentials deck, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
+It ships with a **fictional demo repository** with two teams: a data and analytics team (6 CVs) and a built environment team for school water and sanitation tenders (7 CVs with SACPCMP, SACAP, SACQSP and ECSA registrations), 13 projects, 2 PowerPoint credentials decks, 3 reference letters, 7 certificates and compliance documents) and a sample tender, so it can be shown without any real company data.
 
 Live site: https://merhawi-hailu.github.io/rfp-bid-desk/
 

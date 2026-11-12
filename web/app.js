@@ -500,7 +500,7 @@ $("#cvSummary").addEventListener("click", e => { if (e.target.closest("#bulkMail
 const CERT_HEAD = /^\s*[-•*]?\s*(?:professional\s+)?(?:certifications?|certificates?|accreditations?|registrations?|licen[cs]es?)(?:\s+(?:and|&)\s+[a-z]+)?\s*[:\-]\s*(.*)$/i;
 const NEXT_HEAD = /^\s*(?:experience|key projects|projects|skills|key skills|education|qualifications|employment|work history|career|languages|references|summary|profile|memberships|publications|awards)\b[^:\n]{0,30}:/i;
 const EXAM_CODE = /\b(?:AZ|DP|PL|AI|MS|SC|MB|MD|SY|CS)-\d{3}\b/gi;
-const KNOWN_CERT = /\b(PMP|PRINCE2|CAPM|PMI-ACP|CISSP|CISA|CISM|CRISC|ITIL|TOGAF|CSM|CSPO|CBAP|CFA|COBIT|SAFe)\b/i;
+const KNOWN_CERT = /\b(Pr\.?\s?(?:CPM|CM|CHSA|Arch|SArch\s?T|QS|Tech\s?Eng|Eng)|PMP|PRINCE2|CAPM|PMI-ACP|CISSP|CISA|CISM|CRISC|ITIL|TOGAF|CSM|CSPO|CBAP|CFA|COBIT|SAFe)\b/i;
 const LEVELS = ["foundation", "practitioner", "associate", "expert", "professional", "specialist", "fundamentals"];
 const CERT_STOP = new Set(["microsoft", "certified", "certification", "certificate", "associate", "the", "and", "for", "with", "professional"]);
 
@@ -518,7 +518,7 @@ function certClaims(text) {
     }
   }
   const items = [];
-  parts.join("\n").split(/\n|;|•/).forEach(chunk =>
+  parts.join("\n").replace(/\bPr\.\s?/g, "Pr ").split(/\n|;|•/).forEach(chunk =>
     chunk.split(/(?<=[)\d])\.\s+|\.\s+(?=[A-Z])/).forEach(x => {
       const t = x.replace(/^[\s\-*]+|[\s.,]+$/g, "");
       if (t.length >= 2 && !/^(no|none|not)\b/i.test(t)) items.push(t);
@@ -812,6 +812,8 @@ function viewAnalysis(x) {
   ${arr(x.notStated).length ? `<div class="box pad"><p class="eyebrow">Not stated in the RFP</p><ul class="plain">${arr(x.notStated).map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}`;
 }
 
+/** Removes empty and repeated items, ignoring case and punctuation ("Pr. CPM" and "Pr CPM" count as one). */
+function uniqCI(list) { const seen = new Set(); return arr(list).filter(v => { const k = norm(v); if (!k || seen.has(k)) return false; seen.add(k); return true; }); }
 /** Deliverables as a table. Older analyses only have names, so the other columns show what is known. */
 function delivTable(x) {
   const names = arr(x.deliverables), det = arr(x.deliverableDetails);
@@ -834,11 +836,11 @@ function resourceTable(x) {
     const ok = cr ? matchingCvs(cr) : [];
     return ok.length ? ok.slice(0, 2).map(cd => `<span class="pill ok">${esc(cd.name)}</span>`).join(" ") : `<span class="pill bad">No CV meets all</span>`;
   };
-  const certCount = roles.reduce((n, r) => n + arr(r.certifications).length + arr(r.registrations).length, 0);
+  const certCount = roles.reduce((n, r) => n + uniqCI([...arr(r.certifications), ...arr(r.registrations)]).length, 0);
   return `<div class="box pad"><div class="grouphead"><p class="eyebrow">Required resources</p><span class="note">${roles.length} role${roles.length === 1 ? "" : "s"} · ${certCount} certification${certCount === 1 ? "" : "s"} or registration${certCount === 1 ? "" : "s"} asked for</span></div>
     <div class="tbl"><table class="restbl"><thead><tr><th>Role</th><th>No.</th><th>Certifications and registrations</th><th>Qualifications</th><th>Min. years</th><th>Experience</th><th>Our match</th></tr></thead><tbody>
     ${roles.map(r => `<tr><td><b>${esc(r.role)}</b>${r.reference ? `<span class="ty">Clause ${esc(r.reference)}</span>` : ""}</td><td class="num">${esc(r.count ?? 1)}</td>
-      <td>${list([...arr(r.certifications), ...arr(r.registrations)], "None asked for")}</td><td>${list(r.qualifications)}</td>
+      <td>${list(uniqCI([...arr(r.certifications), ...arr(r.registrations)]), "None asked for")}</td><td>${list(r.qualifications)}</td>
       <td class="num">${r.minYears != null && r.minYears !== "" ? esc(r.minYears) + "+" : `<span class="evnote">Not stated</span>`}</td>
       <td>${list([...arr(r.experience), ...arr(r.skills)])}</td><td>${who(r)}</td></tr>`).join("")}
     </tbody></table></div>
@@ -974,7 +976,7 @@ function matrixRows(c) {
   arr(info.roles).forEach((r, i) => {
     const cr = cvRoles.find(x => norm(x.role) === norm(r.role)) || cvRoles.find(x => norm(x.role).includes(norm(r.role)) || norm(r.role).includes(norm(x.role)));
     const p = cr && pack.personnel.find(x => x.role === cr.role);
-    const req = [...arr(r.qualifications), ...arr(r.certifications), ...arr(r.registrations), r.minYears ? `${r.minYears}+ years` : "", ...arr(r.experience)].filter(Boolean).join("; ");
+    const req = uniqCI([...arr(r.qualifications), ...arr(r.certifications), ...arr(r.registrations), r.minYears ? `${r.minYears}+ years` : "", ...arr(r.experience)]).join("; ");
     let status = "pending", rec = "", issue = "", evid = [];
     if (cvSt.data) {
       if (!p || !p.name) { status = "missing"; rec = (cr && cr.recommendation) || "No CV meets every requirement for this role. Find a consultant who does, or ask the client whether an equivalent is acceptable."; issue = `No CV meets all requirements for ${r.role}`; }
@@ -2033,7 +2035,7 @@ async function stepEvidence() {
   const people = arr(c.steps.cv.data && c.steps.cv.data.roles).map(r => {
     const cd = matchingCvs(r)[0]; if (!cd) return null;
     const req = arr(info.roles).find(x => norm(x.role) === norm(r.role)) || arr(info.roles).find(x => norm(r.role).includes(norm(x.role)) || norm(x.role).includes(norm(r.role)));
-    return { role: r.role, name: cd.name, certifications: [...arr(req && req.certifications), ...arr(req && req.registrations)] };
+    return { role: r.role, name: cd.name, certifications: uniqCI([...arr(req && req.certifications), ...arr(req && req.registrations)]) };
   }).filter(Boolean);
   const mandatory = arr(info.mandatory).map(m => ({ id: m.id, requirement: m.requirement, evidence: m.evidence }));
   const certDocs = (c.docs || allDocs()).filter(d => d.kind === "cert");
