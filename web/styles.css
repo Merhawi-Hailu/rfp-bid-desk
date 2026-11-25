@@ -747,3 +747,4 @@ ul.cell { margin: 0; padding-left: 1em; display: grid; gap: 2px; }
 .ulink:hover { text-decoration: underline; }
 .inprop { border-color: #c9e3d3; background: linear-gradient(180deg, #f5fbf7, #fff); }
 .inprop .grouphead .btn { margin-left: auto; }
+.aval .addn { font-style: normal; font-size: 0.78rem; color: var(--ok); font-weight: 600; }

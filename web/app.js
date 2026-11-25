@@ -1052,6 +1052,8 @@ function readiness(c) {
   let n = 0, d = 0;
   Object.keys(W).forEach(k => { if (A[k] != null) { n += W[k] * A[k]; d += W[k]; } });
   A.overall = d ? Math.round(n / d) : 0;
+  A.credAsked = rows.some(r => r.type === "Experience");
+  A.credUsed = arr(c && c.used).filter(u => u.kind === "cred").length;
   A.label = !info ? "Not analysed" : A.overall >= 85 ? "Ready" : A.overall >= 60 ? "Nearly ready" : "Not ready";
   A.rows = rows;
   return A;
@@ -1270,7 +1272,7 @@ function scrOverview(c) {
   const areas = [
     ["RFP analysis", "analysis", R.rfp === 100 ? `<span class="aval"><span class="sti ok">✓</span> Done</span>` : areaVal(R.rfp)],
     ["Compliance", "matrix", areaVal(R.compliance)], ["Proposal structure", "structure", areaVal(R.proposal)], ["Team", "team", areaVal(R.team)],
-    ["Credentials", "credentials", areaVal(R.credentials)], ["Evidence", "evidence", areaVal(R.evidence)],
+    ["Credentials", "credentials", credVal(R, areaVal)], ["Evidence", "evidence", areaVal(R.evidence)],
     ["Final review", "review", c.review ? `<span class="aval"><span class="sti ok">✓</span> ${esc(fmtDate(c.review.at))}</span>` : `<span class="aval na">Not started</span>`],
   ];
   const all = [...g.crit.map(x => ({ ...x, sev: "bad" })), ...g.impr.map(x => ({ ...x, sev: "warn" }))];
@@ -1299,6 +1301,12 @@ function scrOverview(c) {
     </div></div>`;
 }
 
+/** Credentials: scored against the RFP's previous-work requirements. If the RFP names none, say so and count what was added. */
+function credVal(R, areaVal) {
+  const added = R.credUsed ? `<span class="aval"><span class="sti ok">✓</span> ${R.credUsed} added</span>` : "";
+  if (R.credAsked) return R.credentials == null ? areaVal(null) : `<span class="aval">${R.credUsed ? `<em class="addn">${R.credUsed} added</em>` : ""}<b>${R.credentials}%</b>${pbar(R.credentials, pctCls(R.credentials))}</span>`;
+  return added || `<span class="aval na">Not asked for by the RFP</span>`;
+}
 /* RFP analysis */
 function scrAnalysis(c) {
   const x = c.steps.info.data;
@@ -1612,7 +1620,8 @@ function scrCredentials(c) {
     ${res ? `<section class="vstack"><div class="grouphead"><h2>Search results</h2><span class="note">${res.length} found for "${esc(CR.q)}"</span></div>
       ${res.length ? `<div class="cards">${res.filter(r => r.full).slice(0, 3).map(r => credCard({ ...r, cls: "strong", badge: "Strong match" })).join("")}</div>
         ${res.filter(r => !r.full).length || res.filter(r => r.full).length > 3 ? `<h3 class="subh">Other possible matches</h3><div class="box">${[...res.filter(r => r.full).slice(3), ...res.filter(r => !r.full)].map(r => credRow(r.path, r.title, `${r.because.filter(b => !b.no).length} of ${r.because.length} words`, r.q)).join("")}</div>` : ""}` : `<div class="box empty">Nothing found. Try other words.</div>`}</section>` : ""}
-    <section class="vstack"><div class="grouphead"><h2>Recommended for this RFP</h2><span class="note">Chosen by the AI against the RFP's experience requirements.</span></div>
+    ${arr(info.experienceRequirements).length ? "" : `<div class="box pad callout"><b>The RFP analysis found no previous-work requirement.</b> These credentials were found as general proof of similar work, so the readiness score does not grade them. If the RFP does ask for previous work or references, click <b>Read the RFP again</b> on RFP analysis.</div>`}
+    <section class="vstack"><div class="grouphead"><h2>Recommended for this RFP</h2><span class="note">${arr(info.experienceRequirements).length ? "Chosen by the AI against the RFP's experience requirements." : "Chosen by the AI as similar work to this RFP's scope."}</span></div>
       ${w ? (top.length ? `<div class="cards">${top.map(credCard).join("")}</div>` : `<div class="box empty">No strong credentials found for this RFP.</div>`) : stepWait(c, "work")}
       ${others.length ? `<h3 class="subh">Other possible matches</h3><div class="box">${others.join("")}</div>` : ""}</section>`;
 }
@@ -1657,6 +1666,7 @@ function scrReview(c) {
   if (!c.steps.info.data) return `${head("Review", "Final review")}${stepWait(c, "info")}`;
   const R = readiness(c), g = gaps(c, R.rows);
   const bars = [["Compliance", R.compliance], ["Requirements met", R.rows.length ? Math.round(100 * R.rows.filter(r => r.status === "complete").length / R.rows.length) : null], ["Credentials", R.credentials], ["Team", R.team], ["Evidence", R.evidence], ["Proposal structure", R.proposal]];
+  const credNote = !R.credAsked ? (R.credUsed ? `${R.credUsed} added (the RFP names no previous work)` : "Not asked for by the RFP") : null;
   const item = (x, sev) => `<li class="${sev}"><button type="button" ${x.rowId ? `data-row="${esc(x.rowId)}"` : `data-go2="${esc(x.go || "matrix")}"`}><span class="sti ${sev}">${sev === "bad" ? "✕" : "!"}</span>${esc(x.text)}</button></li>`;
   return `${head("Review", "Final review", "Check the proposal against the RFP before you submit.")}
     <div class="revgrid">
@@ -1665,7 +1675,7 @@ function scrReview(c) {
         ${c.review ? `<p class="note">Last review ${esc(fmtDate(c.review.at))}: ${c.review.score}%.</p>` : `<p class="note">Not reviewed yet.</p>`}
         <div class="col"><button class="btn primary" type="button" id="runReview" ${S.running ? "disabled" : ""}>Run final review</button><button class="btn" type="button" data-dl="html">Export proposal pack</button><button class="btn link" type="button" data-dl="md">Download as text (.md)</button></div>
       </div>
-      <div class="box pad"><p class="eyebrow">By area</p><ul class="revbars">${bars.map(([l, v]) => `<li><span>${esc(l)}</span>${v == null ? `<em class="na">Waiting</em>` : `<b>${v}%</b>${pbar(v, pctCls(v))}`}</li>`).join("")}</ul></div>
+      <div class="box pad"><p class="eyebrow">By area</p><ul class="revbars">${bars.map(([l, v]) => `<li><span>${esc(l)}</span>${l === "Credentials" && credNote ? `<em class="na">${esc(credNote)}</em>` : v == null ? `<em class="na">Waiting</em>` : `<b>${v}%</b>${pbar(v, pctCls(v))}`}</li>`).join("")}</ul></div>
     </div>
     <section class="box pad"><div class="grouphead"><h2>Critical issues</h2><span class="note">These can disqualify the bid or lose many points.</span></div>${g.crit.length ? `<ul class="issues">${g.crit.map(x => item(x, "bad")).join("")}</ul>` : `<p class="okline"><span class="sti ok">✓</span> No critical issues.</p>`}</section>
     <section class="box pad"><div class="grouphead"><h2>Recommended improvements</h2><span class="note">These make the proposal stronger.</span></div>${g.impr.length ? `<ul class="issues">${g.impr.map(x => item(x, "warn")).join("")}</ul>` : `<p class="okline"><span class="sti ok">✓</span> Nothing else to improve.</p>`}</section>`;
