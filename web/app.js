@@ -1369,7 +1369,8 @@ $("#scrim").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden && !document.querySelector("dialog[open]")) closeDrawer(); });
 
 function evList(items) {
-  return items.length ? `<ul class="evlist">${items.map((f, i) => `<li><button type="button" class="filechip" data-evi="${i}">${esc(f.label || baseName(f.path))}</button>${f.note ? `<span class="pill ${esc(f.cls || "na")}">${esc(f.note)}</span>` : ""}</li>`).join("")}</ul>` : `<p class="evnote">No supporting documents found.</p>`;
+  const inProp = p => { const c = S.current, d = findDoc(p), k = d ? d.path : p; return !!(c && arr(c.used).some(u => u.path === k)); };
+  return items.length ? `<ul class="evlist">${items.map((f, i) => `<li><button type="button" class="filechip" data-evi="${i}">${esc(f.label || baseName(f.path))}</button>${f.note ? `<span class="pill ${esc(f.cls || "na")}">${esc(f.note)}</span>` : ""}${inProp(f.path) ? `<span class="pill ok">In proposal</span>` : ""}</li>`).join("")}</ul>` : `<p class="evnote">No supporting documents found.</p>`;
 }
 function openRowPanel(id) {
   const c = S.current; if (!c) return;
@@ -1429,10 +1430,11 @@ function scrStructure(c) {
           <span class="secbtns"><button type="button" class="btn small ghost" data-smove="${i}:-1" aria-label="Move up" ${i ? "" : "disabled"}>↑</button><button type="button" class="btn small ghost" data-smove="${i}:1" aria-label="Move down" ${i < st.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="btn small ghost" data-sexp="${esc(s.id)}" aria-expanded="${openSec === s.id}">${openSec === s.id ? "Close" : "Open"}</button></span>
         </div>
         ${arr(s.subs).length && openSec !== s.id ? `<ul class="subs">${arr(s.subs).map((x, j) => `<li>${i + 1}.${j + 1} ${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${used.length && openSec !== s.id ? `<ul class="usedlist">${used.map(u => `<li><span class="sti ok">✓</span><span class="ukind">${esc(usedLabel(u))}</span><button type="button" class="ulink" data-ev="${esc(JSON.stringify({ path: u.path, title: u.label }))}">${esc(u.label)}</button></li>`).join("")}</ul>` : ""}
         ${openSec === s.id ? `<div class="secopen">
           <div><label for="subs-${esc(s.id)}">Sub-sections (one per line)</label><textarea id="subs-${esc(s.id)}" data-ssubs="${esc(s.id)}" rows="4">${esc(arr(s.subs).join("\n"))}</textarea></div>
           <div><p class="lbl">What this section must answer</p>${linked.length ? `<ul class="reqlist">${linked.map(r => `<li><button type="button" class="reqline" data-row="${esc(r.id)}"><span class="ref">${esc(r.ref)}</span><span class="txt">${esc(clip(r.text, 120))}</span>${stIcon(r.status)}</button></li>`).join("")}</ul>` : `<p class="evnote">No requirements linked. Link them from the compliance matrix.</p>`}
-          ${used.length ? `<p class="lbl">Evidence added</p><ul class="evlist">${used.map(u => `<li>${fileChip(u.path)}<span class="evnote">${esc(u.label)}</span></li>`).join("")}</ul>` : ""}
+          ${used.length ? `<p class="lbl">Evidence added</p><ul class="evlist">${used.map(u => `<li><span class="ukind">${esc(usedLabel(u))}</span>${fileChip(u.path)}${u.kind === "letter" ? "" : `<button type="button" class="btn small ghost" data-use="${esc(JSON.stringify({ kind: u.kind, path: u.path, label: u.label, role: u.role || undefined }))}">Remove</button>`}</li>`).join("")}</ul>` : ""}
           <div class="row end"><button type="button" class="btn small danger" data-sdel="${esc(s.id)}">${pendingSecDel === s.id ? "Confirm delete" : "Delete section"}</button></div></div>` : ""}
       </li>`;
     }).join("")}</ol>`;
@@ -1480,13 +1482,30 @@ function isUsed(u) { const c = S.current; return !!(c && arr(c.used).some(x => x
 function toggleUse(u) {
   const c = S.current; if (!c) return;
   ensureExtras(c);
-  if (isUsed(u)) { c.used = c.used.filter(x => !(x.path === u.path && x.kind === u.kind && (x.role || "") === (u.role || ""))); toast("Removed from the proposal"); }
-  else {
+  if (isUsed(u)) {
+    c.used = c.used.filter(x => !(x.path === u.path && x.kind === u.kind && (x.role || "") === (u.role || "")) && x.with !== u.path);
+    toast("Removed from the proposal");
+  } else {
     const s = findSection(c, u.kind === "cv" ? "team" : "cred") || arr(c.structure)[0];
-    c.used.push({ ...u, section: s ? s.id : "" }); toast(s ? `Added to ${secNo(c, s)} ${s.title}` : "Added to the proposal");
+    c.used.push({ ...u, section: s ? s.id : "" });
+    // A credential brings its signed reference letter with it, when the AI found one.
+    const letter = u.kind === "cred" ? letterFor(c, u.path) : null;
+    if (letter && !c.used.some(x => x.path === letter.path)) c.used.push({ kind: "letter", path: letter.path, label: letter.title || baseName(letter.path), section: s ? s.id : "", with: u.path });
+    toast(s ? `Added to ${secNo(c, s)} ${s.title}${letter ? ", with its reference letter" : ""}` : "Added to the proposal");
   }
   saveRun(true); render();
 }
+/** The reference letter the AI linked to a past project, if any. */
+function letterFor(c, path) {
+  const d0 = findDoc(path), key = d0 ? d0.path : path;
+  for (const r of arr(c.steps.work && c.steps.work.data && c.steps.work.data.requirements))
+    for (const m of arr(r.matches)) {
+      const d = findDoc(m.file);
+      if ((d ? d.path : m.file) === key && m.letterFile) { const l = findDoc(m.letterFile); return l || { path: m.letterFile, title: baseName(m.letterFile) }; }
+    }
+  return null;
+}
+const usedLabel = u => ({ cv: "CV", cred: "Credential", letter: "Reference letter" }[u.kind] || "Evidence");
 const useBtn = u => `<button type="button" class="btn small ${isUsed(u) ? "added" : "primary"}" data-use="${esc(JSON.stringify(u))}">${isUsed(u) ? "✓ Added" : "Add to proposal"}</button>`;
 document.querySelector(".main").addEventListener("click", e => {
   const u = e.target.closest("[data-use]"); if (u) { toggleUse(JSON.parse(u.dataset.use)); return; }
@@ -1585,7 +1604,10 @@ function scrCredentials(c) {
   const extra = shortlist(allDocs().filter(d => d.kind === "project" && !seen.has(d.path)), [...arr(info.searchTerms), ...arr(info.deliverables).flatMap(d => String(d).split(/[,;]/))], 5).picked.filter(p => p.score > 0);
   const others = [...low.map(o => credRow(o.path, o.title, o.badge, o.q)), ...extra.map(p => credRow(p.d.path, p.d.title || baseName(p.d.path), `${p.hits.length} matching terms`, findQuote(p.d, p.hits.join(" "))))];
   const res = CR.q.trim() ? credSearch(CR.q) : null;
-  return `${head("Evidence", "Credentials", "Past projects and credential decks that prove we have done this before. PowerPoint decks are read slide by slide, so you see the exact slide.")}
+  const inProp = arr(c.used).filter(u => u.kind === "cred" || u.kind === "letter"), credSec = findSection(c, "cred");
+  const inBox = `<div class="box pad inprop"><div class="grouphead"><h2>In this proposal</h2><span class="note">${inProp.length ? `${inProp.filter(u => u.kind === "cred").length} credential${inProp.filter(u => u.kind === "cred").length === 1 ? "" : "s"} and ${inProp.filter(u => u.kind === "letter").length} reference letter${inProp.filter(u => u.kind === "letter").length === 1 ? "" : "s"}${credSec ? `, under ${secNo(c, credSec)} ${esc(credSec.title)}` : ""}` : "Nothing added yet. Press Add to proposal on a credential below."}</span>${inProp.length ? `<button type="button" class="btn small" data-go2="structure">Open proposal structure</button>` : ""}</div>
+    ${inProp.length ? `<ul class="usedlist">${inProp.map(u => `<li><span class="sti ok">✓</span><span class="ukind">${esc(usedLabel(u))}</span><button type="button" class="ulink" data-ev="${esc(JSON.stringify({ path: u.path, title: u.label }))}">${esc(u.label)}</button></li>`).join("")}</ul>` : ""}</div>`;
+  return `${head("Evidence", "Credentials", "Past projects and credential decks that prove we have done this before. PowerPoint decks are read slide by slide, so you see the exact slide.")}${inBox}
     <div class="box pad searchbox"><label for="crSearch">Search all credentials</label><input type="search" id="crSearch" placeholder="e.g. revenue dashboards on Fabric" value="${esc(CR.q)}"></div>
     ${res ? `<section class="vstack"><div class="grouphead"><h2>Search results</h2><span class="note">${res.length} found for "${esc(CR.q)}"</span></div>
       ${res.length ? `<div class="cards">${res.filter(r => r.full).slice(0, 3).map(r => credCard({ ...r, cls: "strong", badge: "Strong match" })).join("")}</div>
